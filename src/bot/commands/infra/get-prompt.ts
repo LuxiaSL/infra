@@ -125,9 +125,11 @@ export async function executeGetPrompt(
     }
 
     const firstCall = llmCalls[0]!
-    const bodyRefs = firstCall.bodyRefs as Record<string, unknown> | undefined
-    const refs = bodyRefs?.requestBodyRefs as string[] | undefined
-    const requestRef = (bodyRefs?.requestBodyRef as string | undefined) ?? refs?.[0]
+    // The trace server API flattens bodyRefs to top-level fields on each LLM call,
+    // while the raw trace file on disk nests them under bodyRefs.
+    // Handle both formats for robustness.
+    const requestRef = (firstCall.requestBodyRef as string | undefined)
+      ?? (firstCall.bodyRefs as Record<string, unknown> | undefined)?.requestBodyRef as string | undefined
 
     if (!requestRef) {
       await interaction.editReply({
