@@ -15,7 +15,7 @@ import {
   MessageFlags,
   AttachmentBuilder,
 } from 'discord.js'
-import { readFileSync, existsSync, readdirSync } from 'fs'
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { logger } from '../../../utils/logger.js'
 
@@ -50,8 +50,14 @@ export async function executeGetPrompt(
   await interaction.deferReply({ flags: MessageFlags.Ephemeral })
 
   try {
-    const messageId = interaction.options.getString('message_id', true)
+    let messageId = interaction.options.getString('message_id', true)
     const botFilter = interaction.options.getString('bot')
+
+    // Accept both raw message IDs and full Discord URLs
+    const urlMatch = messageId.match(/discord(?:app)?\.com\/channels\/\d+\/\d+\/(\d+)/)
+    if (urlMatch) {
+      messageId = urlMatch[1]!
+    }
 
     const traceDirs = getTraceDirs()
     let foundTrace: Record<string, unknown> | null = null
@@ -61,13 +67,18 @@ export async function executeGetPrompt(
     for (const traceDir of traceDirs) {
       if (!existsSync(traceDir)) continue
 
-      // If bot filter provided, only search that bot's traces
+      // If bot filter provided, find matching directory (case-insensitive)
+      const allBotDirs = readdirSync(traceDir).filter(name => {
+        const p = join(traceDir, name)
+        try { return statSync(p).isDirectory() } catch { return false }
+      })
+
       const botDirs = botFilter
-        ? [botFilter]
-        : readdirSync(traceDir).filter(name => {
-            const path = join(traceDir, name)
-            try { return require('fs').statSync(path).isDirectory() } catch { return false }
-          })
+        ? allBotDirs.filter(name =>
+            name.toLowerCase() === botFilter.toLowerCase() ||
+            name.toLowerCase().replace(/[^a-z0-9]/g, '') === botFilter.toLowerCase().replace(/[^a-z0-9]/g, '')
+          )
+        : allBotDirs
 
       for (const botName of botDirs) {
         const botTraceDir = join(traceDir, botName)
