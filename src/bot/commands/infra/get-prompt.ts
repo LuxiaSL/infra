@@ -66,6 +66,11 @@ export const getPromptCommand = new SlashCommandBuilder()
       .setRequired(false)
       .setAutocomplete(true)
   )
+  .addBooleanOption(opt =>
+    opt.setName('readable')
+      .setDescription('Format as readable conversation transcript instead of raw JSON (default: true)')
+      .setRequired(false)
+  )
 
 export async function executeGetPrompt(
   interaction: ChatInputCommandInteraction,
@@ -139,16 +144,26 @@ export async function executeGetPrompt(
     }
 
     // Step 3: Get the request body via trace server API
-    const requestBody = await traceRequest<unknown>(`/api/request/${encodeURIComponent(requestRef)}`)
+    const requestBody = await traceRequest<Record<string, unknown>>(`/api/request/${encodeURIComponent(requestRef)}`)
 
-    const formatted = JSON.stringify(requestBody, null, 2)
-    const filename = `prompt-${match.botName}-${messageId}.json`
+    const readable = interaction.options.getBoolean('readable') ?? true
+    const model = firstCall.model as string | undefined
+
+    let formatted: string
+    let filename: string
+
+    if (readable) {
+      formatted = formatPromptReadable(requestBody, model)
+      filename = `prompt-${match.botName}-${messageId}.txt`
+    } else {
+      formatted = JSON.stringify(requestBody, null, 2)
+      filename = `prompt-${match.botName}-${messageId}.json`
+    }
+
     const attachment = new AttachmentBuilder(
       Buffer.from(formatted, 'utf-8'),
       { name: filename },
     )
-
-    const model = firstCall.model as string | undefined
 
     await interaction.editReply({
       content: `Prompt for **${match.botName}** (trace: ${match.traceId}, model: ${model || 'unknown'}):`,
@@ -167,4 +182,111 @@ export async function executeGetPrompt(
       content: `❌ Failed to retrieve prompt: ${error instanceof Error ? error.message : 'Unknown error'}`,
     })
   }
+}
+
+// ============================================================================
+// Readable prompt formatter
+// ============================================================================
+
+/**
+ * Extract text content from a message content field.
+ * Handles both string content (prefill mode) and array content (native mode).
+ */
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((block: Record<string, unknown>) => {
+        if (block.type === 'text') return block.text as string
+        if (block.type === 'image_url' || block.type === 'image') return '[image]'
+        if (block.type === 'tool_use') return `[tool_use: ${block.name}]`
+        if (block.type === 'tool_result') return `[tool_result: ${(block.content as string || '').slice(0, 100)}]`
+        return `[${block.type}]`
+      })
+      .join('')
+  }
+  return String(content ?? '')
+}
+
+/**
+ * Format an LLM request body as a readable conversation transcript.
+ *
+ * Handles both Anthropic and OpenAI request formats:
+ * - Anthropic: `system` field (string or array) + `messages` with role user/assistant
+ * - OpenAI: `messages` with role system/user/assistant
+ */
+function formatPromptReadable(body: Record<string, unknown>, model?: string): string {
+  const lines: string[] = []
+
+  // Header
+  lines.push(`# Prompt — ${model || 'unknown model'}`)
+  if (body.temperature !== undefined) lines.push(`# temperature: ${body.temperature}`)
+  if (body.max_tokens !== undefined) lines.push(`# max_tokens: ${body.max_tokens}`)
+  if (body.max_completion_tokens !== undefined) lines.push(`# max_completion_tokens: ${body.max_completion_tokens}`)
+
+  const stopSeqs = body.stop_sequences ?? body.stop
+  if (Array.isArray(stopSeqs) && stopSeqs.length > 0) {
+    lines.push(`# stop_sequences: ${stopSeqs.map(s => JSON.stringify(s)).join(', ')}`)
+  }
+  lines.push('')
+
+  // System prompt — Anthropic format (separate field)
+  const system = body.system
+  if (system) {
+    lines.push('=== SYSTEM ===')
+    if (typeof system === 'string') {
+      lines.push(system)
+    } else if (Array.isArray(system)) {
+      for (const block of system) {
+        if (typeof block === 'string') {
+          lines.push(block)
+        } else if (block.type === 'text') {
+          lines.push(block.text as string)
+        }
+      }
+    }
+    lines.push('')
+  }
+
+  // Messages
+  const messages = body.messages as Array<Record<string, unknown>> | undefined
+  if (!messages) {
+    lines.push('[no messages]')
+    return lines.join('\n')
+  }
+
+  lines.push('=== CONVERSATION ===')
+  lines.push('')
+
+  for (const msg of messages) {
+    const role = msg.role as string
+    const content = extractText(msg.content)
+
+    // OpenAI system messages
+    if (role === 'system') {
+      lines.push('=== SYSTEM ===')
+      lines.push(content)
+      lines.push('')
+      continue
+    }
+
+    // For prefill-mode Anthropic requests, the content is already
+    // formatted as "participant: message\nparticipant: message..."
+    // so we can just output it directly without adding a role prefix,
+    // since the role prefix would be redundant.
+    const isPrefill = content.includes('\n') && /^\w[\w\s.]*:/.test(content)
+
+    if (isPrefill) {
+      // Content already has participant labels — output as-is
+      lines.push(`--- ${role} ---`)
+      lines.push(content)
+    } else {
+      // Native chat format — prefix with role
+      lines.push(`[${role}]`)
+      lines.push(content)
+    }
+    lines.push('')
+  }
+
+  return lines.join('\n')
 }
