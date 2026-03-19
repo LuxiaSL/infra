@@ -1,5 +1,5 @@
 /**
- * Soma Core Type Definitions
+ * Infra Core Type Definitions
  */
 
 // Re-export all types

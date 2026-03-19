@@ -10,7 +10,7 @@
 
 import type { Client, TextChannel } from 'discord.js'
 import type { Database } from 'better-sqlite3'
-import type { SomaEventBus, InsufficientFundsEvent } from '../../types/events.js'
+import type { InfraEventBus, InsufficientFundsEvent } from '../../types/events.js'
 import { createInsufficientFundsEmbed, Emoji } from '../embeds/builders.js'
 import { sendDM, createBalanceCheckButtons } from '../notifications/dm.js'
 import { getOrCreateUser } from '../../services/user.js'
@@ -22,7 +22,7 @@ import { logger } from '../../utils/logger.js'
  * Set up event handlers for API -> Bot notifications
  */
 export function setupNotificationHandlers(
-  eventBus: SomaEventBus,
+  eventBus: InfraEventBus,
   client: Client,
   db: Database
 ): void {

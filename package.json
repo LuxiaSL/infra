@@ -1,7 +1,7 @@
 {
-  "name": "@anima/soma",
-  "version": "0.1.0",
-  "description": "Credit system for AI bot interactions in Discord",
+  "name": "@anima/infra",
+  "version": "0.2.0",
+  "description": "Discord infra bot: ichor economy + loom/fork system + config management",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

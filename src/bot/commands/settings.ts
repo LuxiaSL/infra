@@ -22,7 +22,7 @@ import { logger } from '../../utils/logger.js'
 
 export const settingsCommand = new SlashCommandBuilder()
   .setName('settings')
-  .setDescription('Manage your Soma preferences')
+  .setDescription('Manage your infra preferences')
   .addSubcommand(sub =>
     sub
       .setName('view')
@@ -30,7 +30,7 @@ export const settingsCommand = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub
       .setName('dm')
-      .setDescription('Toggle whether Soma can send you DMs'))
+      .setDescription('Toggle whether Infra can send you DMs'))
 
 export async function executeSettings(
   interaction: ChatInputCommandInteraction,
@@ -64,7 +64,7 @@ async function executeSettingsView(
   const embed = new EmbedBuilder()
     .setColor(Colors.ICHOR_PURPLE)
     .setTitle('⚙️ Your Settings')
-    .setDescription('Manage how Soma interacts with you')
+    .setDescription('Manage how Infra interacts with you')
     .addFields(
       {
         name: '📬 DM Notifications',

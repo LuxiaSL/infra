@@ -6,7 +6,7 @@
 
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js'
 
-/** Soma color palette */
+/** Infra color palette */
 export const Colors = {
   ICHOR_PURPLE: 0x9B59B6,    // Primary embed color
   SUCCESS_GREEN: 0x2ECC71,   // Positive transactions
@@ -145,7 +145,7 @@ export function createBalanceEmbed(data: {
         inline: true,
       }
     )
-    .setFooter({ text: 'Soma Credit System' })
+    .setFooter({ text: 'Ichor Economy' })
     .setTimestamp()
 
   // Add reward status if configured (max > 0)

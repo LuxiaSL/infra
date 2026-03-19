@@ -60,9 +60,9 @@ async function showWelcomeMessage(
 
   const embed = new EmbedBuilder()
     .setColor(Colors.ICHOR_PURPLE)
-    .setTitle(`${Emoji.ICHOR} Welcome to Soma!`)
+    .setTitle(`${Emoji.ICHOR} Welcome to Infra!`)
     .setDescription(
-      'Soma manages **ichor**, a shared currency for AI bot activations.\n\n' +
+      'Infra manages **ichor**, a shared currency for AI bot activations.\n\n' +
       'This is a quick overview to get you started!'
     )
     .addFields(

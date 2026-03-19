@@ -1,5 +1,5 @@
 /**
- * Soma Discord Bot - Entry Point
+ * Infra Discord Bot - Entry Point
  * 
  * This bot handles:
  * - User commands (/balance, /transfer, /costs, /history)
@@ -10,14 +10,14 @@
 
 import { Client, GatewayIntentBits, Partials, Events, ActivityType } from 'discord.js'
 import type { Database } from 'better-sqlite3'
-import type { SomaEventBus } from '../types/events.js'
+import type { InfraEventBus } from '../types/events.js'
 import { registerCommands, handleInteraction } from './commands/index.js'
 import { handleReactionAdd } from './handlers/reactions.js'
 import { setupNotificationHandlers } from './handlers/notifications.js'
 import { logAdminConfig } from '../services/roles.js'
 import { logger } from '../utils/logger.js'
 
-/** Discord intents and partials needed for Soma bot functionality */
+/** Discord intents and partials needed for infra bot functionality */
 const CLIENT_OPTIONS = {
   intents: [
     GatewayIntentBits.Guilds,              // Basic guild info
@@ -34,13 +34,13 @@ const CLIENT_OPTIONS = {
   ],
 }
 
-export class SomaBot {
+export class InfraBot {
   private client: Client
   private db: Database
   private token: string
-  private eventBus?: SomaEventBus
+  private eventBus?: InfraEventBus
 
-  constructor(db: Database, token: string, eventBus?: SomaEventBus) {
+  constructor(db: Database, token: string, eventBus?: InfraEventBus) {
     this.db = db
     this.token = token
     this.eventBus = eventBus
@@ -55,10 +55,10 @@ export class SomaBot {
       logger.info({
         user: readyClient.user.tag,
         guildCount: readyClient.guilds.cache.size,
-      }, 'Soma bot connected to Discord')
+      }, 'Infra bot connected to Discord')
 
       // Set activity
-      readyClient.user.setActivity('your ichor balance', { type: ActivityType.Watching })
+      readyClient.user.setActivity('the loom', { type: ActivityType.Watching })
 
       // Set up notification handlers for API events (insufficient funds, etc.)
       if (this.eventBus) {
@@ -126,7 +126,7 @@ export class SomaBot {
   }
 
   async start(): Promise<void> {
-    logger.info('Starting Soma Discord bot...')
+    logger.info('Starting Infra Discord bot...')
 
     // Log admin configuration for verification
     logAdminConfig()
@@ -139,7 +139,7 @@ export class SomaBot {
   }
 
   async stop(): Promise<void> {
-    logger.info('Stopping Soma Discord bot...')
+    logger.info('Stopping Infra Discord bot...')
     this.client.destroy()
   }
 

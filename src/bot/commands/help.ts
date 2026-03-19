@@ -20,7 +20,7 @@ import { Colors, Emoji, formatRegenRate } from '../embeds/builders.js'
 
 export const helpCommand = new SlashCommandBuilder()
   .setName('help')
-  .setDescription('Learn how to use Soma')
+  .setDescription('Learn about ichor economy and infra commands')
   .addStringOption(opt =>
     opt
       .setName('topic')
@@ -93,9 +93,9 @@ export async function executeHelp(
 function createOverviewEmbed(globalConfig: any, serverConfig: any): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(Colors.ICHOR_PURPLE)
-    .setTitle(`${Emoji.ICHOR} Welcome to Soma`)
+    .setTitle(`${Emoji.ICHOR} Welcome to Infra`)
     .setDescription(
-      'Soma is an **ichor economy system** that manages AI bot activations across servers.\n\n' +
+      'Infra is the **ichor economy and loom system** that manages AI bot activations across servers.\n\n' +
       '**How it works:**\n' +
       '• You have a balance of **ichor** (a shared currency)\n' +
       '• Mentioning or replying to AI bots costs ichor\n' +
@@ -133,7 +133,7 @@ function createOverviewEmbed(globalConfig: any, serverConfig: any): EmbedBuilder
 function createCommandsEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(Colors.ICHOR_PURPLE)
-    .setTitle('⚡ Soma Commands')
+    .setTitle('⚡ Ichor Commands')
     .setDescription('All available slash commands:')
     .addFields(
       {
@@ -161,7 +161,7 @@ function createCommandsEmbed(): EmbedBuilder {
           '`/help [topic]` — Get help on a specific topic',
       },
       {
-        name: '🔧 Admin Commands (`/soma`)',
+        name: '🔧 Admin Commands (`/ichor`)',
         value:
           '**User Management:**\n' +
           '`grant` / `revoke` — Add or remove ichor from users\n' +
@@ -236,9 +236,9 @@ function createBountyEmbed(serverConfig: any): EmbedBuilder {
         name: '⚙️ Server Configuration',
         value:
           'Admins can customize the bounty system:\n' +
-          '`/soma config-bounty-emoji` — Change the star emoji\n' +
-          '`/soma config-bounty-cost` — Adjust cost per star\n' +
-          '`/soma config-bounty-tiers` — Set tier thresholds & rewards',
+          '`/ichor config-bounty-emoji` — Change the star emoji\n' +
+          '`/ichor config-bounty-cost` — Adjust cost per star\n' +
+          '`/ichor config-bounty-tiers` — Set tier thresholds & rewards',
       }
     )
     .setFooter({ text: `This server: ${bountyEmoji} costs ${bountyStarCost} ichor | Tiers: ${bountyTiers.map((t: any) => t.threshold + '⭐').join(', ')}` })
@@ -251,7 +251,7 @@ function createReactionsEmbed(serverConfig: any): EmbedBuilder {
     .setColor(Colors.ICHOR_PURPLE)
     .setTitle('😀 Emoji Reactions')
     .setDescription(
-      'Soma watches for special emoji reactions on **bot messages** to enable tipping, rewards, and bounties.'
+      'Infra watches for special emoji reactions on **bot messages** to enable tipping, rewards, and bounties.'
     )
     .addFields(
       {
@@ -284,16 +284,16 @@ function createReactionsEmbed(serverConfig: any): EmbedBuilder {
         value:
           'Free rewards have daily limits and cooldowns to prevent spam.\n' +
           'Check `/balance` to see your remaining rewards and cooldown status.\n' +
-          '_Admins can adjust these with `/soma global-*` commands._',
+          '_Admins can adjust these with `/ichor global-*` commands._',
       },
       {
         name: '💡 Other Reactions You Might See',
         value:
           `${Emoji.INSUFFICIENT} **Insufficient funds** — You tried to activate a bot but ran out of ichor\n` +
-          `${Emoji.DM_FAILED} **DM unavailable** — Soma couldn't send you a DM (check \`/notifications\` instead)`,
+          `${Emoji.DM_FAILED} **DM unavailable** — Infra couldn't send you a DM (check \`/notifications\` instead)`,
       }
     )
-    .setFooter({ text: 'Server admins can customize emoji with /soma config-* commands' })
+    .setFooter({ text: 'Server admins can customize emoji with /ichor config-* commands' })
 }
 
 function createEconomyEmbed(globalConfig: any): EmbedBuilder {
@@ -381,12 +381,12 @@ function createSettingsEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(Colors.ICHOR_PURPLE)
     .setTitle('⚙️ Settings & Notifications')
-    .setDescription('Customize how Soma interacts with you.')
+    .setDescription('Customize how Infra interacts with you.')
     .addFields(
       {
         name: '📬 DM Notifications',
         value:
-          'By default, Soma **does not send DMs**. All notifications go to your inbox.\n\n' +
+          'By default, Infra **does not send DMs**. All notifications go to your inbox.\n\n' +
           'If you prefer DM notifications, you can enable them:\n' +
           '`/settings dm` — Toggle DMs on/off\n' +
           '`/settings view` — See your current preferences\n\n' +

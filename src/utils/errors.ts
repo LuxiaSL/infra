@@ -1,11 +1,11 @@
 /**
- * Soma Error Classes
+ * Infra Error Classes
  */
 
 /**
- * Base error class for Soma
+ * Base error class for Infra
  */
-export class SomaError extends Error {
+export class InfraError extends Error {
   constructor(
     message: string,
     public readonly code: string,
@@ -13,7 +13,7 @@ export class SomaError extends Error {
     public readonly details?: Record<string, unknown>
   ) {
     super(message)
-    this.name = 'SomaError'
+    this.name = 'InfraError'
   }
 
   /**
@@ -31,7 +31,7 @@ export class SomaError extends Error {
 /**
  * Insufficient balance error (402)
  */
-export class InsufficientBalanceError extends SomaError {
+export class InsufficientBalanceError extends InfraError {
   constructor(required: number, available: number) {
     super(
       'User does not have enough ichor',
@@ -46,7 +46,7 @@ export class InsufficientBalanceError extends SomaError {
 /**
  * User not found error (404)
  */
-export class UserNotFoundError extends SomaError {
+export class UserNotFoundError extends InfraError {
   constructor(userId: string) {
     super(
       `User ${userId} not found`,
@@ -61,7 +61,7 @@ export class UserNotFoundError extends SomaError {
 /**
  * Server not found error (404)
  */
-export class ServerNotFoundError extends SomaError {
+export class ServerNotFoundError extends InfraError {
   constructor(serverId: string) {
     super(
       `Server ${serverId} not found`,
@@ -76,7 +76,7 @@ export class ServerNotFoundError extends SomaError {
 /**
  * Bot not configured error (404)
  */
-export class BotNotConfiguredError extends SomaError {
+export class BotNotConfiguredError extends InfraError {
   constructor(botId: string, serverId?: string) {
     super(
       `Bot ${botId} has no cost configured`,
@@ -91,7 +91,7 @@ export class BotNotConfiguredError extends SomaError {
 /**
  * Invalid transfer error (400)
  */
-export class InvalidTransferError extends SomaError {
+export class InvalidTransferError extends InfraError {
   constructor(reason: string) {
     super(
       `Invalid transfer: ${reason}`,
@@ -106,7 +106,7 @@ export class InvalidTransferError extends SomaError {
 /**
  * Rate limited error (429)
  */
-export class RateLimitedError extends SomaError {
+export class RateLimitedError extends InfraError {
   constructor(retryAfter?: number) {
     super(
       'Too many requests',
@@ -121,7 +121,7 @@ export class RateLimitedError extends SomaError {
 /**
  * Validation error (400)
  */
-export class ValidationError extends SomaError {
+export class ValidationError extends InfraError {
   constructor(message: string, field?: string) {
     super(
       message,
@@ -136,7 +136,7 @@ export class ValidationError extends SomaError {
 /**
  * Database error (500)
  */
-export class DatabaseError extends SomaError {
+export class DatabaseError extends InfraError {
   constructor(message: string, cause?: Error) {
     super(
       message,
@@ -151,7 +151,7 @@ export class DatabaseError extends SomaError {
 /**
  * Not found error (404)
  */
-export class NotFoundError extends SomaError {
+export class NotFoundError extends InfraError {
   constructor(message: string, resource?: string) {
     super(
       message,
@@ -166,7 +166,7 @@ export class NotFoundError extends SomaError {
 /**
  * Conflict error (409)
  */
-export class ConflictError extends SomaError {
+export class ConflictError extends InfraError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(
       message,

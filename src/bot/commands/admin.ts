@@ -23,9 +23,9 @@ import { logger } from '../../utils/logger.js'
 import { getGlobalConfig, getDefaultServerConfig, updateGlobalConfig, getGlobalConfigInfo } from '../../services/config.js'
 import { DEFAULT_SERVER_CONFIG } from '../../types/index.js'
 
-export const somaAdminCommand = new SlashCommandBuilder()
-  .setName('soma')
-  .setDescription('Soma administration commands')
+export const ichorAdminCommand = new SlashCommandBuilder()
+  .setName('ichor')
+  .setDescription('Ichor economy administration commands')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand(sub =>
     sub
@@ -318,7 +318,7 @@ function hasAdminRole(interaction: ChatInputCommandInteraction, db: Database): b
   return false
 }
 
-export async function executeSomaAdmin(
+export async function executeIchorAdmin(
   interaction: ChatInputCommandInteraction,
   db: Database,
   _client: Client

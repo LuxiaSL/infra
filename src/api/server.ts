@@ -7,9 +7,9 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import type { Server } from 'http'
 import type { Database } from 'better-sqlite3'
 import type { ApiConfig } from '../types/index.js'
-import type { SomaEventBus } from '../types/events.js'
+import type { InfraEventBus } from '../types/events.js'
 import { createAuthMiddleware } from './middleware/auth.js'
-import { SomaError } from '../utils/errors.js'
+import { InfraError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 
 // Route handlers
@@ -33,7 +33,7 @@ export class ApiServer {
   constructor(
     private config: ApiConfig,
     private db: Database,
-    eventBus?: SomaEventBus
+    eventBus?: InfraEventBus
   ) {
     this.app = express()
     this.startTime = new Date()
@@ -115,7 +115,7 @@ export class ApiServer {
     this.app.use((err: Error, req: Request, res: Response, _next: NextFunction): void => {
       logger.error({ error: err, path: req.path, method: req.method }, 'Unhandled error')
 
-      if (err instanceof SomaError) {
+      if (err instanceof InfraError) {
         res.status(err.httpStatus).json(err.toResponse())
         return
       }

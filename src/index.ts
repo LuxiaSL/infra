@@ -1,7 +1,7 @@
 /**
- * Soma - Credit Management Service
+ * Infra - Discord Bot Service
  *
- * Entry point for the Soma API server and Discord bot
+ * Entry point for the Infra API server and Discord bot
  */
 
 import 'dotenv/config'
@@ -10,15 +10,15 @@ import { EventEmitter } from 'events'
 import { loadConfig } from './config.js'
 import { initDatabase, closeDatabase } from './db/connection.js'
 import { ApiServer } from './api/server.js'
-import { SomaBot } from './bot/index.js'
+import { InfraBot } from './bot/index.js'
 import { cleanupExpiredMessages } from './services/tracking.js'
 import { setConfigDatabase } from './services/config.js'
 import { setRewardDatabase, cleanupRewardCooldowns } from './bot/handlers/reactions.js'
 import { logger } from './utils/logger.js'
-import type { SomaEventBus } from './types/events.js'
+import type { InfraEventBus } from './types/events.js'
 
 async function main(): Promise<void> {
-  logger.info('Starting Soma...')
+  logger.info('Starting Infra...')
 
   // Load configuration
   const config = loadConfig()
@@ -39,16 +39,16 @@ async function main(): Promise<void> {
   setRewardDatabase(db)
 
   // Create shared event bus for API <-> Bot communication
-  const eventBus = new EventEmitter() as SomaEventBus
+  const eventBus = new EventEmitter() as InfraEventBus
   eventBus.setMaxListeners(20) // Prevent warnings for multiple listeners
 
   // Create API server (pass eventBus for insufficient funds notifications)
   const server = new ApiServer(config, db, eventBus)
 
   // Create Discord bot (if token is configured)
-  let bot: SomaBot | null = null
+  let bot: InfraBot | null = null
   if (config.discordToken) {
-    bot = new SomaBot(db, config.discordToken, eventBus)
+    bot = new InfraBot(db, config.discordToken, eventBus)
   } else {
     logger.warn('SOMA_DISCORD_TOKEN not set - Discord bot will not start')
   }
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
   // Start API server
   await server.start()
-  logger.info(`Soma API ready at http://localhost:${config.port}`)
+  logger.info(`Infra API ready at http://localhost:${config.port}`)
 
   // Start Discord bot
   if (bot) {
@@ -88,10 +88,10 @@ async function main(): Promise<void> {
     }
   }, 60 * 60 * 1000) // Every hour
 
-  logger.info('Soma startup complete')
+  logger.info('Infra startup complete')
 }
 
 main().catch((error) => {
-  logger.fatal({ error }, 'Failed to start Soma')
+  logger.fatal({ error }, 'Failed to start Infra')
   process.exit(1)
 })

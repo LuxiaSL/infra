@@ -1,5 +1,5 @@
 /**
- * Pino logger setup for Soma
+ * Pino logger setup for Infra
  */
 
 import { pino, type Logger } from 'pino'

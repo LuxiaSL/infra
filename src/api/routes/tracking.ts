@@ -7,7 +7,7 @@ import { Router } from 'express'
 import type { Database } from 'better-sqlite3'
 import { z } from 'zod'
 import { trackMessage, getTrackedMessage } from '../../services/tracking.js'
-import { SomaError } from '../../utils/errors.js'
+import { InfraError } from '../../utils/errors.js'
 import type { TrackMessageRequest, TrackMessageResponse, GetTrackedMessageResponse } from '../../types/index.js'
 
 const TrackMessageSchema = z.object({
@@ -30,7 +30,7 @@ export function createTrackingRouter(db: Database): Router {
     try {
       const validation = TrackMessageSchema.safeParse(req.body)
       if (!validation.success) {
-        throw new SomaError(
+        throw new InfraError(
           'VALIDATION_ERROR',
           'Invalid request body',
           400,
@@ -72,7 +72,7 @@ export function createTrackingRouter(db: Database): Router {
       const tracked = getTrackedMessage(db, messageId)
 
       if (!tracked) {
-        throw new SomaError(
+        throw new InfraError(
           'NOT_FOUND',
           'Message not found or expired',
           404

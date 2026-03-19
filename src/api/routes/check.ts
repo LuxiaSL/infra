@@ -8,7 +8,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import type { Database } from 'better-sqlite3'
 import type { CheckAndDeductRequest, CheckAndDeductResponse } from '../../types/api.js'
-import type { SomaEventBus, InsufficientFundsEvent } from '../../types/events.js'
+import type { InfraEventBus, InsufficientFundsEvent } from '../../types/events.js'
 import { getBalance, deductBalance } from '../../services/balance.js'
 import { getBotCost, getCheaperAlternatives, getBotDescription } from '../../services/cost.js'
 import { getOrCreateUser, getOrCreateServer } from '../../services/user.js'
@@ -84,8 +84,8 @@ export function createCheckRouter(db: Database): Router {
           triggerType: body.triggerType,
         }, 'Insufficient balance - activation denied')
 
-        // Emit event for Soma bot to send DM notification
-        const eventBus = req.app.get('eventBus') as SomaEventBus | undefined
+        // Emit event for Infra bot to send DM notification
+        const eventBus = req.app.get('eventBus') as InfraEventBus | undefined
         if (eventBus) {
           const botName = getBotDescription(db, body.botId, body.serverId) || body.botId
           const insufficientFundsEvent: InsufficientFundsEvent = {

@@ -1,5 +1,5 @@
 /**
- * Event Types for Soma Internal Communication
+ * Event Types for Infra Internal Communication
  * 
  * These events are used for communication between the API server
  * and the Discord bot (e.g., for insufficient funds notifications)
@@ -40,19 +40,19 @@ export interface InsufficientFundsEvent {
 }
 
 /**
- * All Soma event types
+ * All Infra event types
  */
-export interface SomaEvents {
+export interface InfraEvents {
   insufficientFunds: [InsufficientFundsEvent]
 }
 
 /**
- * Typed event emitter for Soma events
+ * Typed event emitter for Infra events
  */
-export interface SomaEventBus extends EventEmitter {
-  emit<K extends keyof SomaEvents>(event: K, ...args: SomaEvents[K]): boolean
-  on<K extends keyof SomaEvents>(event: K, listener: (...args: SomaEvents[K]) => void): this
-  once<K extends keyof SomaEvents>(event: K, listener: (...args: SomaEvents[K]) => void): this
-  off<K extends keyof SomaEvents>(event: K, listener: (...args: SomaEvents[K]) => void): this
+export interface InfraEventBus extends EventEmitter {
+  emit<K extends keyof InfraEvents>(event: K, ...args: InfraEvents[K]): boolean
+  on<K extends keyof InfraEvents>(event: K, listener: (...args: InfraEvents[K]) => void): this
+  once<K extends keyof InfraEvents>(event: K, listener: (...args: InfraEvents[K]) => void): this
+  off<K extends keyof InfraEvents>(event: K, listener: (...args: InfraEvents[K]) => void): this
 }
 

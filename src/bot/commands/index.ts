@@ -20,7 +20,7 @@ import { transferCommand, executeTransfer } from './transfer.js'
 import { costsCommand, executeCosts } from './costs.js'
 import { historyCommand, executeHistory } from './history.js'
 import { leaderboardCommand, executeLeaderboard } from './leaderboard.js'
-import { somaAdminCommand, executeSomaAdmin } from './admin.js'
+import { ichorAdminCommand, executeIchorAdmin } from './admin.js'
 import { settingsCommand, executeSettings } from './settings.js'
 import { notificationsCommand, executeNotifications } from './notifications.js'
 import { helpCommand, executeHelp } from './help.js'
@@ -57,7 +57,7 @@ const commands = [
   costsCommand,
   historyCommand,
   leaderboardCommand,
-  somaAdminCommand,
+  ichorAdminCommand,
   settingsCommand,
   notificationsCommand,
   helpCommand,
@@ -260,8 +260,8 @@ async function handleCommand(
     case 'leaderboard':
       await executeLeaderboard(interaction, db)
       break
-    case 'soma':
-      await executeSomaAdmin(interaction, db, client)
+    case 'ichor':
+      await executeIchorAdmin(interaction, db, client)
       break
     case 'settings':
       await executeSettings(interaction, db)
