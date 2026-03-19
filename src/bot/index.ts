@@ -75,6 +75,37 @@ export class SomaBot {
       }
     })
 
+    // Message events — fork thread auto-renaming
+    this.client.on(Events.MessageCreate, async (message) => {
+      try {
+        // Auto-rename fork threads when a new message arrives
+        // Fork threads have names ending with ⌥
+        if (
+          message.channel.isThread() &&
+          message.channel.name.endsWith('⌥') &&
+          !message.system
+        ) {
+          // Only rename if the new message is from a different author than the previous
+          const recent = await message.channel.messages.fetch({ before: message.id, limit: 1 })
+          const prev = recent.first()
+          if (!prev || prev.author.id !== message.author.id) {
+            const clean = message.content
+              .replace(/<@!?\d+>/g, '')
+              .replace(/<#\d+>/g, '')
+              .replace(/```[\s\S]*?```/g, '')
+              .trim()
+            if (clean) {
+              const newName = '⌥ ' + clean.slice(0, 40) + '...'
+              await message.channel.setName(newName.slice(0, 100))
+            }
+          }
+        }
+      } catch (error) {
+        // Non-critical — just log and move on
+        logger.debug({ error, channelId: message.channel.id }, 'Failed to auto-rename fork thread')
+      }
+    })
+
     // Reaction events
     this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
       try {

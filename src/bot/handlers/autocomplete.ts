@@ -8,6 +8,7 @@ import { type AutocompleteInteraction } from 'discord.js'
 import type { Database } from 'better-sqlite3'
 import type { BotCostRow } from '../../types/index.js'
 import { getOrCreateServer } from '../../services/user.js'
+import { autocompleteBotNames, autocompleteConfigKeys } from '../commands/infra/get-config.js'
 import { logger } from '../../utils/logger.js'
 
 export async function handleAutocomplete(
@@ -23,9 +24,23 @@ export async function handleAutocomplete(
     focusedValue: focused.value,
   }, 'Handling autocomplete')
 
-  // Bot autocomplete for /costs and /soma set-cost
-  if (focused.name === 'bot') {
+  // Bot autocomplete for /costs and /soma set-cost (from DB)
+  if (focused.name === 'bot' && (commandName === 'costs' || commandName === 'soma')) {
     await handleBotAutocomplete(interaction, db, focused.value)
+    return
+  }
+
+  // Bot autocomplete for /get_config and /get_prompt (from EMS filesystem)
+  if (focused.name === 'bot' && (commandName === 'get_config' || commandName === 'get_prompt')) {
+    const choices = autocompleteBotNames(focused.value)
+    await interaction.respond(choices)
+    return
+  }
+
+  // Config property autocomplete for /get_config
+  if (focused.name === 'property' && commandName === 'get_config') {
+    const choices = autocompleteConfigKeys(focused.value)
+    await interaction.respond(choices)
     return
   }
 

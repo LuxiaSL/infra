@@ -1,6 +1,6 @@
 /**
  * Command Registration and Handler
- * 
+ *
  * Manages slash command registration and routing
  */
 
@@ -14,7 +14,7 @@ import {
 import type { Database } from 'better-sqlite3'
 import { logger } from '../../utils/logger.js'
 
-// Import command modules
+// Import soma command modules
 import { balanceCommand, executeBalance } from './balance.js'
 import { transferCommand, executeTransfer } from './transfer.js'
 import { costsCommand, executeCosts } from './costs.js'
@@ -27,8 +27,31 @@ import { helpCommand, executeHelp } from './help.js'
 import { handleButton } from '../handlers/buttons.js'
 import { handleAutocomplete } from '../handlers/autocomplete.js'
 
+// Import infra command modules
+import {
+  copyCommand, executeCopy,
+  sendCommand, executeSend,
+  configCommand, executeConfig,
+  configSpeakersCommand, executeConfigSpeakers,
+  unsetConfigCommand, executeUnsetConfig,
+  getConfigCommand, executeGetConfig,
+  historySpliceCommand, executeHistorySplice,
+  transcriptCommand, executeTranscript,
+  getPromptCommand, executeGetPrompt,
+  forkCommand, executeFork,
+  muCommand, executeMu,
+  stashCommand, executeStash,
+  handleLoomButton,
+  forkContextMenu,
+  forkPrivateContextMenu,
+  muContextMenu,
+  stashContextMenu,
+  handleLoomContextMenu,
+} from './infra/index.js'
+
 /** All registered slash commands */
 const commands = [
+  // Soma (economy) commands
   balanceCommand,
   transferCommand,
   costsCommand,
@@ -38,21 +61,45 @@ const commands = [
   settingsCommand,
   notificationsCommand,
   helpCommand,
+  // Infra commands
+  copyCommand,
+  sendCommand,
+  configCommand,
+  configSpeakersCommand,
+  unsetConfigCommand,
+  getConfigCommand,
+  historySpliceCommand,
+  transcriptCommand,
+  getPromptCommand,
+  forkCommand,
+  muCommand,
+  stashCommand,
+]
+
+/** Context menu commands */
+const contextMenuCommands = [
+  forkContextMenu,
+  forkPrivateContextMenu,
+  muContextMenu,
+  stashContextMenu,
 ]
 
 /**
  * Register slash commands with Discord
- * 
+ *
  * If SOMA_DEV_GUILD_ID is set, registers to that guild only (instant) and clears global commands.
  * Otherwise registers globally (takes ~1 hour to propagate) and clears guild commands.
- * 
+ *
  * This prevents duplicate commands from appearing.
  */
 export async function registerCommands(token: string): Promise<void> {
   const rest = new REST({ version: '10' }).setToken(token)
 
   try {
-    const commandData = commands.map(cmd => cmd.toJSON())
+    const commandData = [
+      ...commands.map(cmd => cmd.toJSON()),
+      ...contextMenuCommands.map(cmd => cmd.toJSON()),
+    ]
 
     // Get client ID from token
     const base64 = token.split('.')[0]
@@ -66,7 +113,7 @@ export async function registerCommands(token: string): Promise<void> {
     logger.info({ commands: commandNames }, 'Commands to register')
 
     if (devGuildId) {
-      logger.info({ 
+      logger.info({
         commandCount: commandData.length,
         guildId: devGuildId,
       }, 'Registering slash commands to dev guild (instant)...')
@@ -76,7 +123,7 @@ export async function registerCommands(token: string): Promise<void> {
         body: commandData,
       }) as any[]
 
-      logger.info({ 
+      logger.info({
         guildId: devGuildId,
         registeredCount: result.length,
         registeredCommands: result.map(c => c.name),
@@ -95,7 +142,7 @@ export async function registerCommands(token: string): Promise<void> {
         body: commandData,
       }) as any[]
 
-      logger.info({ 
+      logger.info({
         registeredCount: result.length,
         registeredCommands: result.map(c => c.name),
       }, 'Successfully registered slash commands globally (may take up to 1 hour to propagate)')
@@ -133,8 +180,18 @@ export async function handleInteraction(
       return
     }
 
+    // Message context menu commands (right-click on message)
+    if (interaction.isMessageContextMenuCommand()) {
+      await handleLoomContextMenu(interaction, client)
+      return
+    }
+
     // Button interactions
     if (interaction.isButton()) {
+      // Try loom buttons first (fork_button|...)
+      const handledByLoom = await handleLoomButton(interaction, client)
+      if (handledByLoom) return
+      // Fall through to soma button handler
       await handleButton(interaction, db, client)
       return
     }
@@ -187,40 +244,71 @@ async function handleCommand(
   }, 'Handling command')
 
   switch (commandName) {
+    // === Soma (economy) commands ===
     case 'balance':
       await executeBalance(interaction, db)
       break
-
     case 'transfer':
       await executeTransfer(interaction, db, client)
       break
-
     case 'costs':
       await executeCosts(interaction, db)
       break
-
     case 'history':
       await executeHistory(interaction, db)
       break
-
     case 'leaderboard':
       await executeLeaderboard(interaction, db)
       break
-
     case 'soma':
       await executeSomaAdmin(interaction, db, client)
       break
-
     case 'settings':
       await executeSettings(interaction, db)
       break
-
     case 'notifications':
       await executeNotifications(interaction, db)
       break
-
     case 'help':
       await executeHelp(interaction, db)
+      break
+
+    // === Infra commands ===
+    case 'fork':
+      await executeFork(interaction, client)
+      break
+    case 'mu':
+      await executeMu(interaction, client)
+      break
+    case 'stash':
+      await executeStash(interaction, client)
+      break
+    case 'copy':
+      await executeCopy(interaction, client)
+      break
+    case 'send':
+      await executeSend(interaction, client)
+      break
+    case 'config':
+      await executeConfig(interaction)
+      break
+    case 'config_speakers':
+      await executeConfigSpeakers(interaction)
+      break
+    case 'unset_config':
+      await executeUnsetConfig(interaction)
+      break
+    case 'get_config':
+      await executeGetConfig(interaction)
+      break
+    case 'history_splice':
+      await executeHistorySplice(interaction)
+      break
+    case 'transcript':
+      await executeTranscript(interaction, client)
+      break
+    case 'get_prompt':
+      await executeGetPrompt(interaction, client)
       break
 
     default:
@@ -231,4 +319,3 @@ async function handleCommand(
       })
   }
 }
-
