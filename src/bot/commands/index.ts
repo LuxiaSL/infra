@@ -87,8 +87,9 @@ const contextMenuCommands = [
 /**
  * Register slash commands with Discord
  *
- * If SOMA_DEV_GUILD_ID is set, registers to that guild only (instant) and clears global commands.
- * Otherwise registers globally (takes ~1 hour to propagate) and clears guild commands.
+ * If SOMA_DEV_GUILD_IDS is set (comma-separated), registers to those guilds (instant)
+ * and clears global commands. Also supports legacy SOMA_DEV_GUILD_ID for a single guild.
+ * Otherwise registers globally (takes ~1 hour to propagate).
  *
  * This prevents duplicate commands from appearing.
  */
@@ -105,29 +106,35 @@ export async function registerCommands(token: string): Promise<void> {
     const base64 = token.split('.')[0]
     const clientId = Buffer.from(base64, 'base64').toString()
 
-    // Check for dev guild (instant registration for testing)
-    const devGuildId = process.env.SOMA_DEV_GUILD_ID
+    // Check for dev guilds (instant registration)
+    // Supports comma-separated list via SOMA_DEV_GUILD_IDS, or single via legacy SOMA_DEV_GUILD_ID
+    const devGuildIds = (process.env.SOMA_DEV_GUILD_IDS ?? process.env.SOMA_DEV_GUILD_ID ?? '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean)
 
     // Log which commands we're registering
     const commandNames = commandData.map((c: any) => c.name)
     logger.info({ commands: commandNames }, 'Commands to register')
 
-    if (devGuildId) {
+    if (devGuildIds.length > 0) {
       logger.info({
         commandCount: commandData.length,
-        guildId: devGuildId,
-      }, 'Registering slash commands to dev guild (instant)...')
+        guildIds: devGuildIds,
+      }, 'Registering slash commands to dev guilds (instant)...')
 
-      // Register to dev guild
-      const result = await rest.put(Routes.applicationGuildCommands(clientId, devGuildId), {
-        body: commandData,
-      }) as any[]
+      // Register to each dev guild
+      for (const guildId of devGuildIds) {
+        const result = await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+          body: commandData,
+        }) as any[]
 
-      logger.info({
-        guildId: devGuildId,
-        registeredCount: result.length,
-        registeredCommands: result.map(c => c.name),
-      }, 'Successfully registered slash commands to dev guild')
+        logger.info({
+          guildId,
+          registeredCount: result.length,
+          registeredCommands: result.map(c => c.name),
+        }, 'Successfully registered slash commands to dev guild')
+      }
 
       // Clear global commands to prevent duplicates
       logger.info('Clearing global commands to prevent duplicates...')
