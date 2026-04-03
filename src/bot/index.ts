@@ -111,7 +111,7 @@ export class InfraBot {
         if (message.content.startsWith('.steer') && !message.author.bot) {
           const memberRoles = message.member?.roles.cache.map(r => r.name) ?? []
           logger.info({ author: message.author.username, roles: memberRoles, hasMember: !!message.member }, '.steer detected — checking roles')
-          if (!memberRoles.some((r: string) => r === 'Scribe')) {
+          if (!memberRoles.some((r: string) => r.toLowerCase() === 'scribe')) {
             logger.info({ author: message.author.username, roles: memberRoles }, '.steer ignored — author lacks Scribe role')
           } else {
             const target = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
