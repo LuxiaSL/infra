@@ -133,13 +133,14 @@ export class InfraBot {
                   }
                 }
               }
+              logger.info({ channelId: message.channel.id, target, author: message.author.username }, 'Attempting to pin .steer message')
               await message.pin()
               logger.info({ channelId: message.channel.id, target, author: message.author.username }, 'Auto-pinned .steer message')
             }
           }
         }
-      } catch (error) {
-        logger.debug({ error, channelId: message.channel.id }, 'Failed to auto-pin .steer message')
+      } catch (error: any) {
+        logger.warn({ error: error?.message || error, channelId: message.channel.id }, 'Failed to auto-pin .steer message')
       }
     })
 
