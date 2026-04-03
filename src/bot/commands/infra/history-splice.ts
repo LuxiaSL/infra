@@ -18,6 +18,7 @@ import {
   MessageFlags,
 } from 'discord.js'
 import { compileConfigMessage } from '../../../infra/config-message.js'
+import { markPinsDirty } from '../../../infra/pin-cache.js'
 import { logger } from '../../../utils/logger.js'
 
 export const historySpliceCommand = new SlashCommandBuilder()
@@ -79,6 +80,7 @@ export async function executeHistorySplice(
     // Pin the .history message so it's always in the channel timeline
     try {
       await historyMsg.pin()
+      markPinsDirty(channel.id)
     } catch (error) {
       logger.warn({ messageId: historyMsg.id, error }, 'Failed to pin .history message (may be at pin limit)')
     }

@@ -19,6 +19,7 @@ import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
 import { CONFIG_KEYS } from '../../../infra/config-message.js'
+import { getPinnedData } from '../../../infra/pin-cache.js'
 import { logger } from '../../../utils/logger.js'
 
 /** Sensitive keys to strip from config output */
@@ -94,47 +95,42 @@ export async function executeGetConfig(
       return
     }
 
-    // Overlay pinned .config messages from this channel
-    try {
-      const pins = await channel.messages.fetchPinned()
-      // Process oldest first (so newest overrides oldest)
-      const configPins = [...pins.values()]
-        .filter(msg => msg.content.startsWith('.config'))
-        .reverse()
+    // Overlay pinned .config messages from this channel (uses pin cache)
+    const pinData = await getPinnedData(channel)
+    // Process oldest first (so newest overrides oldest)
+    const configPins = pinData
+      .filter(pin => pin.content.startsWith('.config'))
+      .reverse()
 
-      for (const pin of configPins) {
-        const yamlStart = pin.content.indexOf('---')
-        if (yamlStart === -1) continue
+    for (const pin of configPins) {
+      const yamlStart = pin.content.indexOf('---')
+      if (yamlStart === -1) continue
 
-        // Check targeting: does this config apply to our bot?
-        const headerLine = pin.content.slice(0, yamlStart).trim()
-        const targets = headerLine.slice('.config'.length).trim()
+      // Check targeting: does this config apply to our bot?
+      const headerLine = pin.content.slice(0, yamlStart).trim()
+      const targets = headerLine.slice('.config'.length).trim()
 
-        if (targets && !targets.split(/\s+/).some(t =>
-          t.toLowerCase() === botName.toLowerCase() ||
-          t === 'all'
-        )) {
-          continue // This config targets other bots
-        }
-
-        try {
-          const yamlContent = pin.content.slice(yamlStart + 3).trim()
-          // Strip markdown code blocks if present
-          const cleanYaml = yamlContent
-            .replace(/^```(?:yaml)?\n?/m, '')
-            .replace(/\n?```$/m, '')
-
-          const overrides = yamlParse(cleanYaml)
-          if (overrides && typeof overrides === 'object') {
-            Object.assign(config, overrides)
-          }
-        } catch {
-          // Skip malformed config pins
-        }
+      if (targets && !targets.split(/\s+/).some(t =>
+        t.toLowerCase() === botName.toLowerCase() ||
+        t === 'all'
+      )) {
+        continue // This config targets other bots
       }
-    } catch (error) {
-      logger.warn({ error, channelId: channel.id }, 'Failed to fetch pinned configs (may be rate limited)')
-      // Continue with base config only
+
+      try {
+        const yamlContent = pin.content.slice(yamlStart + 3).trim()
+        // Strip markdown code blocks if present
+        const cleanYaml = yamlContent
+          .replace(/^```(?:yaml)?\n?/m, '')
+          .replace(/\n?```$/m, '')
+
+        const overrides = yamlParse(cleanYaml)
+        if (overrides && typeof overrides === 'object') {
+          Object.assign(config, overrides)
+        }
+      } catch {
+        // Skip malformed config pins
+      }
     }
 
     // Strip sensitive keys

@@ -16,6 +16,7 @@ import { handleReactionAdd } from './handlers/reactions.js'
 import { setupNotificationHandlers } from './handlers/notifications.js'
 import { logAdminConfig } from '../services/roles.js'
 import { logger } from '../utils/logger.js'
+import { initPinCache, markPinsDirty, getPinnedMessages } from '../infra/pin-cache.js'
 
 /** Discord intents and partials needed for infra bot functionality */
 const CLIENT_OPTIONS = {
@@ -46,6 +47,7 @@ export class InfraBot {
     this.eventBus = eventBus
     this.client = new Client(CLIENT_OPTIONS)
 
+    initPinCache()
     this.setupEventHandlers()
   }
 
@@ -122,13 +124,15 @@ export class InfraBot {
               // Pin first, then try to unpin old ones (non-blocking)
               logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Attempting to pin .steer message')
               await message.pin()
+              markPinsDirty(message.channel.id)
               logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Auto-pinned .steer message')
 
               // Unpin old .steer for same bot — fire and forget with timeout
-              // fetchPinned() can hang under Cloudflare rate limits
               const unpinOld = async () => {
                 try {
-                  const pinnedMessages = await message.channel.messages.fetchPinned()
+                  const pinnedMessages = await getPinnedMessages(message.channel)
+                  if (!pinnedMessages) return
+
                   for (const [, pinned] of pinnedMessages) {
                     if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
                       const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
@@ -139,11 +143,12 @@ export class InfraBot {
                       }
                     }
                   }
+                  markPinsDirty(message.channel.id)
                 } catch (err) {
                   logger.warn({ err, channelId: message.channel.id }, 'Failed to unpin old .steer pins')
                 }
               }
-              // 5s timeout — if fetchPinned hangs, we just move on
+              // 5s timeout — if cache miss + API hangs, we just move on
               Promise.race([unpinOld(), new Promise(r => setTimeout(r, 5000))]).catch(() => {})
             }
           }
@@ -151,6 +156,11 @@ export class InfraBot {
       } catch (error: any) {
         logger.warn({ error: error?.message || error, channelId: message.channel.id }, 'Failed to auto-pin .steer message')
       }
+    })
+
+    // Pin change events — invalidate pin cache so next read re-fetches
+    this.client.on(Events.ChannelPinsUpdate, (channel) => {
+      markPinsDirty(channel.id)
     })
 
     // Reaction events

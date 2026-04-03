@@ -13,6 +13,7 @@ import {
   MessageFlags,
 } from 'discord.js'
 import { compileConfigMessage } from '../../../infra/config-message.js'
+import { markPinsDirty, getPinnedMessages } from '../../../infra/pin-cache.js'
 import { logger } from '../../../utils/logger.js'
 
 // ============================================================================
@@ -136,6 +137,7 @@ export async function executeConfig(
     const content = compileConfigMessage('config', configDict, targets)
     const configMsg = await channel.send(content)
     await configMsg.pin()
+    markPinsDirty(channel.id)
 
     const keyList = Object.keys(configDict).join(', ')
     const targetLabel = targets ? ` for ${targets.join(', ')}` : ''
@@ -194,6 +196,7 @@ export async function executeConfigSpeakers(
     const content = compileConfigMessage('config', { may_speak: speakers })
     const configMsg = await channel.send(content)
     await configMsg.pin()
+    markPinsDirty(channel.id)
 
     logger.info({
       userId: interaction.user.id,
@@ -232,18 +235,23 @@ export async function executeUnsetConfig(
       return
     }
 
-    const pins = await channel.messages.fetchPinned()
+    const pins = await getPinnedMessages(channel)
     let unpinned = 0
 
-    for (const pin of pins.values()) {
-      if (pin.content.startsWith('.config')) {
-        try {
-          await pin.unpin()
-          unpinned++
-        } catch (error) {
-          logger.warn({ messageId: pin.id, error }, 'Failed to unpin config message')
+    if (pins) {
+      for (const pin of pins.values()) {
+        if (pin.content.startsWith('.config')) {
+          try {
+            await pin.unpin()
+            unpinned++
+          } catch (error) {
+            logger.warn({ messageId: pin.id, error }, 'Failed to unpin config message')
+          }
         }
       }
+      if (unpinned > 0) markPinsDirty(channel.id)
+    } else {
+      logger.warn({ channelId: channel.id }, 'Could not fetch pins for unset_config (rate limited?)')
     }
 
     logger.info({
