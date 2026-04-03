@@ -119,25 +119,23 @@ export class InfraBot {
             const botName = steerLine.split(/\s+/)[0] ?? ''
             if (botName) {
               // Unpin any existing .steer for the same bot in this channel
-              const channel = message.channel
-              if ('messages' in channel) {
-                const pinnedMessages = await (channel as any).messages.fetchPinned()
+              // Wrapped separately so unpin failures can't block the new pin
+              try {
+                const pinnedMessages = await message.channel.messages.fetchPinned()
                 const steerPins = [...pinnedMessages.values()].filter((p: any) => p.content.startsWith('.steer'))
-                logger.info({ channelId: channel.id, totalPins: pinnedMessages.size, steerPins: steerPins.length, steerPinIds: steerPins.map((p: any) => p.id), newMessageId: message.id }, 'Fetched pins for unpin check')
+                logger.info({ channelId: message.channel.id, totalPins: pinnedMessages.size, steerPins: steerPins.length, newMessageId: message.id }, 'Fetched pins for unpin check')
                 for (const [, pinned] of pinnedMessages) {
                   if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
                     const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
                     const pinnedBotName = pinnedLine.split(/\s+/)[0] ?? ''
                     if (pinnedBotName === botName) {
-                      try {
-                        await pinned.unpin()
-                        logger.info({ messageId: pinned.id, botName }, 'Unpinned old .steer for same bot')
-                      } catch (err) {
-                        logger.warn({ messageId: pinned.id, err }, 'Failed to unpin old .steer message')
-                      }
+                      await pinned.unpin()
+                      logger.info({ messageId: pinned.id, botName }, 'Unpinned old .steer for same bot')
                     }
                   }
                 }
+              } catch (err) {
+                logger.warn({ err, channelId: message.channel.id }, 'Failed to check/unpin old .steer pins — continuing with pin')
               }
               logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Attempting to pin .steer message')
               await message.pin()
