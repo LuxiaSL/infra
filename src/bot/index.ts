@@ -108,10 +108,11 @@ export class InfraBot {
       // Auto-pin .steer messages (and unpin previous .steer for same target)
       // Only pin if author has "Scribe" role (matches ChapterX steer_roles check)
       try {
-        if (message.content.startsWith('.steer') && !message.author.bot && message.member) {
-          const memberRoles = message.member.roles.cache.map(r => r.name)
+        if (message.content.startsWith('.steer') && !message.author.bot) {
+          const memberRoles = message.member?.roles.cache.map(r => r.name) ?? []
+          logger.info({ author: message.author.username, roles: memberRoles, hasMember: !!message.member }, '.steer detected — checking roles')
           if (!memberRoles.some((r: string) => r === 'Scribe')) {
-            logger.debug({ author: message.author.username, roles: memberRoles }, '.steer ignored — author lacks Scribe role')
+            logger.info({ author: message.author.username, roles: memberRoles }, '.steer ignored — author lacks Scribe role')
           } else {
             const target = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
             if (target) {
