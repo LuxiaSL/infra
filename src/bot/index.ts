@@ -120,7 +120,7 @@ export class InfraBot {
             if (botName) {
               // Unpin any existing .steer for the same bot in this channel
               const channel = message.channel
-              if ('messages' in channel && 'fetchPinned' in channel) {
+              if ('messages' in channel) {
                 const pinnedMessages = await (channel as any).messages.fetchPinned()
                 const steerPins = [...pinnedMessages.values()].filter((p: any) => p.content.startsWith('.steer'))
                 logger.info({ channelId: channel.id, totalPins: pinnedMessages.size, steerPins: steerPins.length, steerPinIds: steerPins.map((p: any) => p.id), newMessageId: message.id }, 'Fetched pins for unpin check')
