@@ -119,28 +119,32 @@ export class InfraBot {
             const botName = steerLine.split(/\s+/)[0] ?? ''
             logger.info({ steerLine, botName, contentPreview: message.content.slice(0, 80) }, '.steer parsed bot name')
             if (botName) {
-              // Unpin any existing .steer for the same bot in this channel
-              // Wrapped separately so unpin failures can't block the new pin
-              try {
-                const pinnedMessages = await message.channel.messages.fetchPinned()
-                const steerPins = [...pinnedMessages.values()].filter((p: any) => p.content.startsWith('.steer'))
-                logger.info({ channelId: message.channel.id, totalPins: pinnedMessages.size, steerPins: steerPins.length, newMessageId: message.id }, 'Fetched pins for unpin check')
-                for (const [, pinned] of pinnedMessages) {
-                  if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
-                    const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
-                    const pinnedBotName = pinnedLine.split(/\s+/)[0] ?? ''
-                    if (pinnedBotName === botName) {
-                      await pinned.unpin()
-                      logger.info({ messageId: pinned.id, botName }, 'Unpinned old .steer for same bot')
-                    }
-                  }
-                }
-              } catch (err) {
-                logger.warn({ err, channelId: message.channel.id }, 'Failed to check/unpin old .steer pins — continuing with pin')
-              }
+              // Pin first, then try to unpin old ones (non-blocking)
               logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Attempting to pin .steer message')
               await message.pin()
               logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Auto-pinned .steer message')
+
+              // Unpin old .steer for same bot — fire and forget with timeout
+              // fetchPinned() can hang under Cloudflare rate limits
+              const unpinOld = async () => {
+                try {
+                  const pinnedMessages = await message.channel.messages.fetchPinned()
+                  for (const [, pinned] of pinnedMessages) {
+                    if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
+                      const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
+                      const pinnedBotName = pinnedLine.split(/\s+/)[0] ?? ''
+                      if (pinnedBotName === botName) {
+                        await pinned.unpin()
+                        logger.info({ messageId: pinned.id, botName }, 'Unpinned old .steer for same bot')
+                      }
+                    }
+                  }
+                } catch (err) {
+                  logger.warn({ err, channelId: message.channel.id }, 'Failed to unpin old .steer pins')
+                }
+              }
+              // 5s timeout — if fetchPinned hangs, we just move on
+              Promise.race([unpinOld(), new Promise(r => setTimeout(r, 5000))]).catch(() => {})
             }
           }
         }
