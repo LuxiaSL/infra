@@ -105,7 +105,7 @@ export class InfraBot {
         logger.debug({ error, channelId: message.channel.id }, 'Failed to auto-rename fork thread')
       }
 
-      // Auto-pin .steer messages (and unpin previous .steer for same target)
+      // Auto-pin .steer messages (and unpin previous .steer for same bot)
       // Only pin if author has "Scribe" role (matches ChapterX steer_roles check)
       try {
         if (message.content.startsWith('.steer') && !message.author.bot) {
@@ -114,18 +114,22 @@ export class InfraBot {
           if (!memberRoles.some((r: string) => r.toLowerCase() === 'scribe')) {
             logger.info({ author: message.author.username, roles: memberRoles }, '.steer ignored — author lacks Scribe role')
           } else {
-            const target = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
-            if (target) {
-              // Unpin any existing .steer for the same target in this channel
+            // Extract just the bot name (first word) for unpin matching
+            const steerLine = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
+            const botName = steerLine.split(/\s+/)[0] ?? ''
+            if (botName) {
+              // Unpin any existing .steer for the same bot in this channel
               const channel = message.channel
               if ('messages' in channel && 'fetchPinned' in channel) {
                 const pinnedMessages = await (channel as any).messages.fetchPinned()
                 for (const [, pinned] of pinnedMessages) {
-                  if (pinned.content.startsWith('.steer')) {
-                    const pinnedTarget = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
-                    if (pinnedTarget === target) {
+                  if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
+                    const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
+                    const pinnedBotName = pinnedLine.split(/\s+/)[0] ?? ''
+                    if (pinnedBotName === botName) {
                       try {
                         await pinned.unpin()
+                        logger.info({ messageId: pinned.id, botName }, 'Unpinned old .steer for same bot')
                       } catch (err) {
                         logger.warn({ messageId: pinned.id, err }, 'Failed to unpin old .steer message')
                       }
@@ -133,9 +137,9 @@ export class InfraBot {
                   }
                 }
               }
-              logger.info({ channelId: message.channel.id, target, author: message.author.username }, 'Attempting to pin .steer message')
+              logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Attempting to pin .steer message')
               await message.pin()
-              logger.info({ channelId: message.channel.id, target, author: message.author.username }, 'Auto-pinned .steer message')
+              logger.info({ channelId: message.channel.id, botName, author: message.author.username }, 'Auto-pinned .steer message')
             }
           }
         }
