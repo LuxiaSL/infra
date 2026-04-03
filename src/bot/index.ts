@@ -117,6 +117,7 @@ export class InfraBot {
             // Extract just the bot name (first word) for unpin matching
             const steerLine = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
             const botName = steerLine.split(/\s+/)[0] ?? ''
+            logger.info({ steerLine, botName, contentPreview: message.content.slice(0, 80) }, '.steer parsed bot name')
             if (botName) {
               // Unpin any existing .steer for the same bot in this channel
               // Wrapped separately so unpin failures can't block the new pin
