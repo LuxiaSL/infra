@@ -104,6 +104,36 @@ export class InfraBot {
         // Non-critical — just log and move on
         logger.debug({ error, channelId: message.channel.id }, 'Failed to auto-rename fork thread')
       }
+
+      // Auto-pin .steer messages (and unpin previous .steer for same target)
+      try {
+        if (message.content.startsWith('.steer') && !message.author.bot) {
+          const target = message.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
+          if (target) {
+            // Unpin any existing .steer for the same target in this channel
+            const channel = message.channel
+            if ('messages' in channel && 'fetchPinned' in channel) {
+              const pinnedMessages = await (channel as any).messages.fetchPinned()
+              for (const [, pinned] of pinnedMessages) {
+                if (pinned.content.startsWith('.steer')) {
+                  const pinnedTarget = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
+                  if (pinnedTarget === target) {
+                    try {
+                      await pinned.unpin()
+                    } catch (err) {
+                      logger.warn({ messageId: pinned.id, err }, 'Failed to unpin old .steer message')
+                    }
+                  }
+                }
+              }
+            }
+            await message.pin()
+            logger.info({ channelId: message.channel.id, target, author: message.author.username }, 'Auto-pinned .steer message')
+          }
+        }
+      } catch (error) {
+        logger.debug({ error, channelId: message.channel.id }, 'Failed to auto-pin .steer message')
+      }
     })
 
     // Reaction events
