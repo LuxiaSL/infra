@@ -122,6 +122,8 @@ export class InfraBot {
               const channel = message.channel
               if ('messages' in channel && 'fetchPinned' in channel) {
                 const pinnedMessages = await (channel as any).messages.fetchPinned()
+                const steerPins = [...pinnedMessages.values()].filter((p: any) => p.content.startsWith('.steer'))
+                logger.info({ channelId: channel.id, totalPins: pinnedMessages.size, steerPins: steerPins.length, steerPinIds: steerPins.map((p: any) => p.id), newMessageId: message.id }, 'Fetched pins for unpin check')
                 for (const [, pinned] of pinnedMessages) {
                   if (pinned.content.startsWith('.steer') && pinned.id !== message.id) {
                     const pinnedLine = pinned.content.split('\n')[0]!.slice('.steer'.length).trim().toLowerCase()
