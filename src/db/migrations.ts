@@ -260,6 +260,30 @@ const MIGRATIONS: Migration[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_cost_overrides_server ON cost_overrides(server_id, expires_at)`)
     }
   },
+  {
+    id: '012_add_bot_pauses',
+    description: 'Add bot_pauses table tracking pinned .pause messages for scheduled unpinning',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS bot_pauses (
+          id TEXT PRIMARY KEY,
+          server_id TEXT NOT NULL REFERENCES servers(id),
+          channel_id TEXT NOT NULL,
+          bot_name TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          messages_initial INTEGER,
+          created_by TEXT NOT NULL,
+          reason TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          UNIQUE (server_id, channel_id, bot_name)
+        )
+      `)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_pauses_expires ON bot_pauses(expires_at)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_pauses_lookup ON bot_pauses(server_id, channel_id, bot_name)`)
+    }
+  },
 ]
 
 /**

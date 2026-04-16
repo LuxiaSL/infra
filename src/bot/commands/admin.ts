@@ -271,7 +271,7 @@ export const ichorAdminCommand = new SlashCommandBuilder()
  * 
  * Works in both server context (checks current roles) and DMs (checks cached roles)
  */
-function hasAdminRole(interaction: ChatInputCommandInteraction, db: Database): boolean {
+export function hasAdminRole(interaction: ChatInputCommandInteraction, db: Database): boolean {
   const discordUserId = interaction.user.id
   const guildId = interaction.guildId
 

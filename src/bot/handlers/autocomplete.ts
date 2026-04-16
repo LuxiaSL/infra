@@ -30,8 +30,16 @@ export async function handleAutocomplete(
     return
   }
 
-  // Bot autocomplete for /get_config and /get_prompt (from EMS filesystem)
-  if (focused.name === 'bot' && (commandName === 'get_config' || commandName === 'get_prompt')) {
+  // Bot autocomplete for /get_config, /get_prompt, /pause, /unpause (from EMS filesystem)
+  if (
+    focused.name === 'bot' &&
+    (
+      commandName === 'get_config'
+      || commandName === 'get_prompt'
+      || commandName === 'pause'
+      || commandName === 'unpause'
+    )
+  ) {
     const choices = autocompleteBotNames(focused.value)
     await interaction.respond(choices)
     return

@@ -41,6 +41,8 @@ import {
   forkCommand, executeFork,
   muCommand, executeMu,
   stashCommand, executeStash,
+  pauseCommand, executePause,
+  unpauseCommand, executeUnpause,
   handleLoomButton,
   forkContextMenu,
   forkPrivateContextMenu,
@@ -74,6 +76,8 @@ const commands = [
   forkCommand,
   muCommand,
   stashCommand,
+  pauseCommand,
+  unpauseCommand,
 ]
 
 /** Context menu commands */
@@ -316,6 +320,12 @@ async function handleCommand(
       break
     case 'get_prompt':
       await executeGetPrompt(interaction, client)
+      break
+    case 'pause':
+      await executePause(interaction, db, client)
+      break
+    case 'unpause':
+      await executeUnpause(interaction, db, client)
       break
 
     default:

@@ -180,6 +180,24 @@ CREATE TABLE IF NOT EXISTS cost_overrides (
   expires_at TEXT NOT NULL
 );
 
+-- Bot pauses (pinned .pause messages with scheduled unpinning)
+-- Source of truth for the pin is the Discord message; this table persists the
+-- expiry timer + unpin bookkeeping across soma restarts.
+CREATE TABLE IF NOT EXISTS bot_pauses (
+  id TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL REFERENCES servers(id),
+  channel_id TEXT NOT NULL,
+  bot_name TEXT NOT NULL,       -- chapterx botId (EMS directory name)
+  message_id TEXT NOT NULL,      -- pinned .pause message id
+  started_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,      -- hard cap even when messages-only; drives the sweeper
+  messages_initial INTEGER,      -- NULL when time-only
+  created_by TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (server_id, channel_id, bot_name)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_transactions_from_user ON transactions(from_user_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_transactions_to_user ON transactions(to_user_id, timestamp);
@@ -193,4 +211,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON user_notifications(user_id,
 CREATE INDEX IF NOT EXISTS idx_bounty_stars_message ON bounty_stars(message_id);
 CREATE INDEX IF NOT EXISTS idx_cost_overrides_bot ON cost_overrides(bot_discord_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_cost_overrides_server ON cost_overrides(server_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_bot_pauses_expires ON bot_pauses(expires_at);
+CREATE INDEX IF NOT EXISTS idx_bot_pauses_lookup ON bot_pauses(server_id, channel_id, bot_name);
 `

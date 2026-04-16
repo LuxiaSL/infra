@@ -12,6 +12,7 @@ import { initDatabase, closeDatabase } from './db/connection.js'
 import { ApiServer } from './api/server.js'
 import { InfraBot } from './bot/index.js'
 import { cleanupExpiredMessages } from './services/tracking.js'
+import { startPauseSweeper, type PauseSweeperHandle } from './services/pause-sweeper.js'
 import { setConfigDatabase } from './services/config.js'
 import { setRewardDatabase, cleanupRewardCooldowns } from './bot/handlers/reactions.js'
 import { logger } from './utils/logger.js'
@@ -53,9 +54,14 @@ async function main(): Promise<void> {
     logger.warn('SOMA_DISCORD_TOKEN not set - Discord bot will not start')
   }
 
+  // Track the sweeper handle so shutdown can stop it
+  let pauseSweeper: PauseSweeperHandle | null = null
+
   // Handle graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutting down...')
+
+    pauseSweeper?.stop()
 
     if (bot) {
       await bot.stop()
@@ -76,6 +82,8 @@ async function main(): Promise<void> {
   // Start Discord bot
   if (bot) {
     await bot.start()
+    // Sweeper needs the Discord client to unpin expired .pause messages.
+    pauseSweeper = startPauseSweeper(db, bot.discordClient)
   }
 
   // Start periodic cleanup of expired tracked messages and old reward entries
