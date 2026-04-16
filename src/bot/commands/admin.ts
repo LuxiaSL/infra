@@ -2043,6 +2043,30 @@ async function executeSale(
     embeds: [embed],
     flags: MessageFlags.Ephemeral,
   })
+
+  // Send a public announcement to the channel
+  const expiresTimestamp = Math.floor(new Date(expiresAt).getTime() / 1000)
+  const announcement = new EmbedBuilder()
+    .setColor(isSurge ? Colors.WARNING_ORANGE : Colors.SUCCESS_GREEN)
+    .setTitle(isSurge ? `📈 Price Surge — ${botName}` : `🏷️ Sale — ${botName}`)
+    .setDescription(
+      isSurge
+        ? `**${botName}** cost has been temporarily increased.\n\n` +
+          `~~${currentBaseCost} ichor~~ → **${cost} ichor** (+${pctChange}%)\n\n` +
+          `Ends <t:${expiresTimestamp}:R> (<t:${expiresTimestamp}:f>)`
+        : `**${botName}** is on sale!\n\n` +
+          `~~${currentBaseCost} ichor~~ → **${cost} ichor** (${pctChange}% off)\n\n` +
+          `Ends <t:${expiresTimestamp}:R> (<t:${expiresTimestamp}:f>)`
+    )
+    .setTimestamp()
+
+  try {
+    if (interaction.channel && 'send' in interaction.channel) {
+      await interaction.channel.send({ embeds: [announcement] })
+    }
+  } catch (err) {
+    logger.warn({ error: err, channelId: interaction.channelId }, 'Failed to send sale announcement to channel')
+  }
 }
 
 async function executeSaleView(
