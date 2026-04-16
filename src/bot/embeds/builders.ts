@@ -291,7 +291,8 @@ export function createCostsEmbed(
   for (const bot of bots) {
     const affordIcon = bot.canAfford ? Emoji.CHECK : Emoji.CROSS
     if (bot.onSale && bot.originalCost !== undefined) {
-      description += `**${bot.name}** • ~~${bot.originalCost.toFixed(1)}~~ **${bot.cost.toFixed(1)} ichor** SALE ${affordIcon}\n`
+      const tag = bot.cost < bot.originalCost ? 'SALE' : 'SURGE'
+      description += `**${bot.name}** • ~~${bot.originalCost.toFixed(1)}~~ **${bot.cost.toFixed(1)} ichor** ${tag} ${affordIcon}\n`
     } else {
       description += `**${bot.name}** • ${bot.cost.toFixed(1)} ichor ${affordIcon}\n`
     }

@@ -1980,9 +1980,9 @@ async function executeSale(
     return
   }
 
-  if (cost >= currentBaseCost) {
+  if (cost === currentBaseCost) {
     await interaction.reply({
-      content: `${Emoji.CROSS} Sale cost (**${cost}** ichor) must be less than the current base cost (**${currentBaseCost}** ichor).`,
+      content: `${Emoji.CROSS} Override cost (**${cost}** ichor) is the same as the current base cost. Nothing to change.`,
       flags: MessageFlags.Ephemeral,
     })
     return
@@ -1999,15 +1999,16 @@ async function executeSale(
     expiresAt
   )
 
-  const discountPercent = Math.round((1 - cost / currentBaseCost) * 100)
+  const isSurge = cost > currentBaseCost
+  const pctChange = Math.round(Math.abs(1 - cost / currentBaseCost) * 100)
   const botName = getBotDescription(db, botUser.id, serverId) || botUser.username
 
   const embed = new EmbedBuilder()
-    .setColor(Colors.SUCCESS_GREEN)
-    .setTitle(`${Emoji.CHECK} Sale Started`)
+    .setColor(isSurge ? Colors.WARNING_ORANGE : Colors.SUCCESS_GREEN)
+    .setTitle(`${Emoji.CHECK} ${isSurge ? 'Surge Started' : 'Sale Started'}`)
     .setDescription(
-      `**${botName}** is now on sale!\n\n` +
-      `~~${currentBaseCost} ichor~~ → **${cost} ichor** (${discountPercent}% off)`
+      `**${botName}** ${isSurge ? 'cost increased' : 'is now on sale'}!\n\n` +
+      `~~${currentBaseCost} ichor~~ → **${cost} ichor** (${pctChange}% ${isSurge ? 'increase' : 'off'})`
     )
     .addFields(
       {
@@ -2074,9 +2075,11 @@ async function executeSaleView(
     const botName = getBotDescription(db, sale.bot_discord_id, serverId) || `<@${sale.bot_discord_id}>`
     const remaining = formatTimeRemaining(sale.expires_at)
     const scope = sale.server_id ? 'Server' : 'Global'
-    const discountPercent = Math.round((1 - sale.override_cost / sale.original_cost) * 100)
+    const isSurge = sale.override_cost > sale.original_cost
+    const pctChange = Math.round(Math.abs(1 - sale.override_cost / sale.original_cost) * 100)
+    const label = isSurge ? `${pctChange}% increase` : `${pctChange}% off`
 
-    description += `**${botName}** — ~~${sale.original_cost}~~ → **${sale.override_cost}** ichor (${discountPercent}% off)\n`
+    description += `**${botName}** — ~~${sale.original_cost}~~ → **${sale.override_cost}** ichor (${label})\n`
     description += `${scope} • ${remaining ? `${remaining} remaining` : 'Expiring...'} • \`${sale.id.slice(0, 8)}\`\n\n`
   }
 
