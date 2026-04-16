@@ -11,7 +11,7 @@ import {
 } from 'discord.js'
 import type { Database } from 'better-sqlite3'
 import { getBalance, getEffectiveCostMultiplier } from '../../services/balance.js'
-import { getAllBotCosts, getUserKnownServersCosts } from '../../services/cost.js'
+import { getAllBotCosts, getUserKnownServersCosts, getActiveCostOverride } from '../../services/cost.js'
 import { getOrCreateUser, getOrCreateServer, extractDiscordUserInfo } from '../../services/user.js'
 import { createCostsEmbed, createAllServersCostsEmbed } from '../embeds/builders.js'
 import { logger } from '../../utils/logger.js'
@@ -99,14 +99,18 @@ export async function executeCosts(
     return
   }
 
-  // Calculate effective costs and affordability
+  // Calculate effective costs and affordability, checking for active sales
   const bots = allCosts.map(bot => {
-    const effectiveCost = bot.baseCost * costMultiplier
+    const override = getActiveCostOverride(db, bot.botDiscordId, serverId)
+    const baseCost = override ? override.override_cost : bot.baseCost
+    const effectiveCost = baseCost * costMultiplier
     return {
       name: bot.description || bot.botDiscordId,
       cost: effectiveCost,
       description: null,  // Don't duplicate description - it's already in the name
       canAfford: balanceData.balance >= effectiveCost,
+      onSale: override !== null,
+      originalCost: override ? bot.baseCost * costMultiplier : undefined,
     }
   })
 

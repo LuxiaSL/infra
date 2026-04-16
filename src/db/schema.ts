@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS bounty_stars (
   PRIMARY KEY (user_id, message_id)
 );
 
+-- Cost overrides (temporary sales/discounts)
+CREATE TABLE IF NOT EXISTS cost_overrides (
+  id TEXT PRIMARY KEY,
+  bot_discord_id TEXT NOT NULL,
+  server_id TEXT REFERENCES servers(id),
+  override_cost REAL NOT NULL,
+  original_cost REAL NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_transactions_from_user ON transactions(from_user_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_transactions_to_user ON transactions(to_user_id, timestamp);
@@ -179,4 +191,6 @@ CREATE INDEX IF NOT EXISTS idx_tracked_messages_expires ON tracked_messages(expi
 -- Note: idx_tracked_messages_trigger is created by migration 009
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON user_notifications(user_id, read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bounty_stars_message ON bounty_stars(message_id);
+CREATE INDEX IF NOT EXISTS idx_cost_overrides_bot ON cost_overrides(bot_discord_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_cost_overrides_server ON cost_overrides(server_id, expires_at);
 `

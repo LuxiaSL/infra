@@ -276,6 +276,8 @@ export function createCostsEmbed(
     cost: number
     description: string | null
     canAfford: boolean
+    onSale?: boolean
+    originalCost?: number
   }>,
   userBalance: number,
   discountPercent?: number
@@ -288,7 +290,11 @@ export function createCostsEmbed(
   let description = ''
   for (const bot of bots) {
     const affordIcon = bot.canAfford ? Emoji.CHECK : Emoji.CROSS
-    description += `**${bot.name}** • ${bot.cost.toFixed(1)} ichor ${affordIcon}\n`
+    if (bot.onSale && bot.originalCost !== undefined) {
+      description += `**${bot.name}** • ~~${bot.originalCost.toFixed(1)}~~ **${bot.cost.toFixed(1)} ichor** SALE ${affordIcon}\n`
+    } else {
+      description += `**${bot.name}** • ${bot.cost.toFixed(1)} ichor ${affordIcon}\n`
+    }
     // Only show description if it's different from the name
     if (bot.description && bot.description !== bot.name) {
       description += `${bot.description}\n`

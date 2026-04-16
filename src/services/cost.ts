@@ -4,7 +4,7 @@
  */
 
 import type { Database } from 'better-sqlite3'
-import type { BotCost, BotCostRow } from '../types/index.js'
+import type { BotCost, BotCostRow, CostOverrideRow } from '../types/index.js'
 import { generateId } from '../db/connection.js'
 import { getEffectiveCostMultiplier } from './balance.js'
 import { getGlobalConfig } from './config.js'
@@ -12,14 +12,14 @@ import { BotNotConfiguredError } from '../utils/errors.js'
 import { logger } from '../utils/logger.js'
 
 /**
- * Get the cost for a bot activation (with role multipliers and global cost multiplier)
+ * Get the cost for a bot activation (with role multipliers, global cost multiplier, and sale overrides)
  */
 export function getBotCost(
   db: Database,
   botDiscordId: string,
   serverId: string,
   userRoles: string[]
-): { cost: number; baseCost: number; roleMultiplier: number; globalMultiplier: number; totalMultiplier: number } {
+): { cost: number; baseCost: number; roleMultiplier: number; globalMultiplier: number; totalMultiplier: number; saleActive: boolean; originalBaseCost: number } {
   // First try server-specific cost
   let row = db.prepare(`
     SELECT base_cost FROM bot_costs
@@ -39,14 +39,20 @@ export function getBotCost(
     throw new BotNotConfiguredError(botDiscordId, serverId)
   }
 
-  const baseCost = row.base_cost
+  const originalBaseCost = row.base_cost
+
+  // Check for active sale override (server-specific first, then global)
+  const override = getActiveCostOverride(db, botDiscordId, serverId)
+  const baseCost = override ? override.override_cost : originalBaseCost
+  const saleActive = override !== null
+
   const roleMultiplier = getEffectiveCostMultiplier(db, serverId, userRoles)
   const globalConfig = getGlobalConfig()
   const globalMultiplier = globalConfig.globalCostMultiplier
   const totalMultiplier = roleMultiplier * globalMultiplier
   const cost = Math.max(0, Math.round(baseCost * totalMultiplier * 100) / 100)
 
-  return { cost, baseCost, roleMultiplier, globalMultiplier, totalMultiplier }
+  return { cost, baseCost, roleMultiplier, globalMultiplier, totalMultiplier, saleActive, originalBaseCost }
 }
 
 /**
@@ -353,4 +359,153 @@ export function setRoleConfig(
 
     logger.info({ serverId, roleDiscordId, config }, 'Created role config')
   }
+}
+
+// ─── Cost Override (Sale) Functions ──────────────────────────────────────────
+
+/**
+ * Get the active cost override for a bot in a server.
+ * Checks server-specific first, then global (server_id IS NULL).
+ * Lazily deletes expired overrides.
+ */
+export function getActiveCostOverride(
+  db: Database,
+  botDiscordId: string,
+  serverId: string
+): CostOverrideRow | null {
+  const now = new Date().toISOString()
+
+  // Clean up any expired overrides for this bot while we're at it
+  db.prepare(`
+    DELETE FROM cost_overrides
+    WHERE bot_discord_id = ? AND expires_at <= ?
+  `).run(botDiscordId, now)
+
+  // Server-specific override first
+  const serverOverride = db.prepare(`
+    SELECT * FROM cost_overrides
+    WHERE bot_discord_id = ?
+    AND server_id = (SELECT id FROM servers WHERE discord_id = ?)
+    AND expires_at > ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(botDiscordId, serverId, now) as CostOverrideRow | undefined
+
+  if (serverOverride) return serverOverride
+
+  // Fall back to global override
+  const globalOverride = db.prepare(`
+    SELECT * FROM cost_overrides
+    WHERE bot_discord_id = ?
+    AND server_id IS NULL
+    AND expires_at > ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(botDiscordId, now) as CostOverrideRow | undefined
+
+  return globalOverride ?? null
+}
+
+/**
+ * Create a temporary cost override (sale) for a bot.
+ * Replaces any existing override for the same bot+server scope.
+ */
+export function createCostOverride(
+  db: Database,
+  botDiscordId: string,
+  serverInternalId: string | null,
+  overrideCost: number,
+  originalCost: number,
+  createdBy: string,
+  expiresAt: string
+): { id: string; replacedExisting: boolean } {
+  const id = generateId()
+
+  // Remove any existing active override for the same bot+server scope
+  const deleted = db.prepare(`
+    DELETE FROM cost_overrides
+    WHERE bot_discord_id = ?
+    AND (server_id = ? OR (server_id IS NULL AND ? IS NULL))
+  `).run(botDiscordId, serverInternalId, serverInternalId)
+
+  const replacedExisting = deleted.changes > 0
+
+  db.prepare(`
+    INSERT INTO cost_overrides (id, bot_discord_id, server_id, override_cost, original_cost, created_by, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, botDiscordId, serverInternalId, overrideCost, originalCost, createdBy, expiresAt)
+
+  logger.info({
+    id,
+    botDiscordId,
+    serverInternalId,
+    overrideCost,
+    originalCost,
+    createdBy,
+    expiresAt,
+    replacedExisting,
+  }, 'Created cost override (sale)')
+
+  return { id, replacedExisting }
+}
+
+/**
+ * Get all active sales for a server (or globally if serverId is null)
+ */
+export function getActiveSales(
+  db: Database,
+  serverInternalId?: string
+): CostOverrideRow[] {
+  const now = new Date().toISOString()
+
+  if (serverInternalId) {
+    // Get server-specific + global overrides
+    return db.prepare(`
+      SELECT * FROM cost_overrides
+      WHERE (server_id = ? OR server_id IS NULL)
+      AND expires_at > ?
+      ORDER BY created_at DESC
+    `).all(serverInternalId, now) as CostOverrideRow[]
+  }
+
+  // All active overrides
+  return db.prepare(`
+    SELECT * FROM cost_overrides
+    WHERE expires_at > ?
+    ORDER BY created_at DESC
+  `).all(now) as CostOverrideRow[]
+}
+
+/**
+ * Cancel an active cost override by ID
+ */
+export function cancelCostOverride(
+  db: Database,
+  overrideId: string
+): CostOverrideRow | null {
+  const row = db.prepare(`
+    SELECT * FROM cost_overrides WHERE id = ?
+  `).get(overrideId) as CostOverrideRow | undefined
+
+  if (!row) return null
+
+  db.prepare(`DELETE FROM cost_overrides WHERE id = ?`).run(overrideId)
+
+  logger.info({ overrideId, botDiscordId: row.bot_discord_id }, 'Cancelled cost override')
+  return row
+}
+
+/**
+ * Clean up all expired overrides. Call periodically or at startup.
+ */
+export function clearExpiredOverrides(db: Database): number {
+  const now = new Date().toISOString()
+  const result = db.prepare(`
+    DELETE FROM cost_overrides WHERE expires_at <= ?
+  `).run(now)
+
+  if (result.changes > 0) {
+    logger.info({ count: result.changes }, 'Cleared expired cost overrides')
+  }
+  return result.changes
 }

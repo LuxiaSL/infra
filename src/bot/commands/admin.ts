@@ -21,6 +21,8 @@ import { createGrantEmbed, Emoji, Colors, formatRegenRate } from '../embeds/buil
 import { EmbedBuilder } from 'discord.js'
 import { logger } from '../../utils/logger.js'
 import { getGlobalConfig, getDefaultServerConfig, updateGlobalConfig, getGlobalConfigInfo } from '../../services/config.js'
+import { createCostOverride, getActiveSales, cancelCostOverride, getBotDescription } from '../../services/cost.js'
+import { parseDuration, expiresFromNow, formatDuration, formatTimeRemaining } from '../../utils/time.js'
 import { DEFAULT_SERVER_CONFIG } from '../../types/index.js'
 
 export const ichorAdminCommand = new SlashCommandBuilder()
@@ -238,6 +240,27 @@ export const ichorAdminCommand = new SlashCommandBuilder()
         opt.setName('confirm')
           .setDescription('You must set this to true to confirm this action')
           .setRequired(true)))
+  // Sale (temporary cost override) subcommands
+  .addSubcommand(sub =>
+    sub
+      .setName('sale')
+      .setDescription('Set a temporary reduced cost for a bot')
+      .addUserOption(opt =>
+        opt.setName('bot').setDescription('The bot to put on sale').setRequired(true))
+      .addNumberOption(opt =>
+        opt.setName('cost').setDescription('Temporary cost in ichor').setRequired(true).setMinValue(0))
+      .addStringOption(opt =>
+        opt.setName('duration').setDescription('Duration (e.g., 1h, 2d, 3w, 30m)').setRequired(true)))
+  .addSubcommand(sub =>
+    sub
+      .setName('sale-view')
+      .setDescription('View active sales in this server'))
+  .addSubcommand(sub =>
+    sub
+      .setName('sale-cancel')
+      .setDescription('Cancel an active sale')
+      .addStringOption(opt =>
+        opt.setName('sale_id').setDescription('Sale ID to cancel (from /ichor sale-view)').setRequired(true)))
 
 /**
  * Check if user has admin access
@@ -406,6 +429,15 @@ export async function executeIchorAdmin(
       break
     case 'global-reset-balances':
       await executeGlobalResetBalances(interaction, db)
+      break
+    case 'sale':
+      await executeSale(interaction, db)
+      break
+    case 'sale-view':
+      await executeSaleView(interaction, db)
+      break
+    case 'sale-cancel':
+      await executeSaleCancel(interaction, db)
       break
     default:
       await interaction.reply({
@@ -1871,6 +1903,245 @@ async function executeGlobalResetBalances(
     previousTotalIchor: beforeStats.totalIchor,
     previousAvgBalance: beforeStats.avgBalance,
   }, 'ECONOMY RESET: All balances reset')
+
+  await interaction.reply({
+    embeds: [embed],
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
+// ─── Sale (Temporary Cost Override) Commands ─────────────────────────────────
+
+async function executeSale(
+  interaction: ChatInputCommandInteraction,
+  db: Database
+): Promise<void> {
+  const botUser = interaction.options.getUser('bot', true)
+  const cost = interaction.options.getNumber('cost', true)
+  const durationStr = interaction.options.getString('duration', true)
+  const serverId = interaction.guildId
+
+  if (!serverId) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} This command can only be used in a server.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  if (!botUser.bot) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} **${botUser.username}** is not a bot. Please select a bot user.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  // Parse duration
+  const durationMs = parseDuration(durationStr)
+  if (durationMs === null) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} Invalid duration "${durationStr}". Use formats like \`30m\`, \`1h\`, \`2d\`, \`3w\`.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  const expiresAt = expiresFromNow(durationStr)
+  if (!expiresAt) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} Could not compute expiration date.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  const server = getOrCreateServer(db, serverId, interaction.guild?.name)
+
+  // Get the current base cost for this bot
+  const existing = db.prepare(`
+    SELECT base_cost FROM bot_costs
+    WHERE bot_discord_id = ? AND server_id = ?
+  `).get(botUser.id, server.id) as { base_cost: number } | undefined
+
+  // Fall back to global cost
+  const globalCost = existing ? null : db.prepare(`
+    SELECT base_cost FROM bot_costs
+    WHERE bot_discord_id = ? AND server_id IS NULL
+  `).get(botUser.id) as { base_cost: number } | undefined
+
+  const currentBaseCost = existing?.base_cost ?? globalCost?.base_cost
+
+  if (currentBaseCost === undefined) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} **${botUser.username}** has no cost configured. Set a base cost with \`/ichor set-cost\` first.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  if (cost >= currentBaseCost) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} Sale cost (**${cost}** ichor) must be less than the current base cost (**${currentBaseCost}** ichor).`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  // Create the override
+  const { id: overrideId, replacedExisting } = createCostOverride(
+    db,
+    botUser.id,
+    server.id,
+    cost,
+    currentBaseCost,
+    interaction.user.id,
+    expiresAt
+  )
+
+  const discountPercent = Math.round((1 - cost / currentBaseCost) * 100)
+  const botName = getBotDescription(db, botUser.id, serverId) || botUser.username
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.SUCCESS_GREEN)
+    .setTitle(`${Emoji.CHECK} Sale Started`)
+    .setDescription(
+      `**${botName}** is now on sale!\n\n` +
+      `~~${currentBaseCost} ichor~~ → **${cost} ichor** (${discountPercent}% off)`
+    )
+    .addFields(
+      {
+        name: 'Duration',
+        value: formatDuration(durationMs),
+        inline: true,
+      },
+      {
+        name: 'Expires',
+        value: `<t:${Math.floor(new Date(expiresAt).getTime() / 1000)}:R>`,
+        inline: true,
+      },
+    )
+    .setFooter({ text: replacedExisting ? 'Replaced previous active sale' : `Sale ID: ${overrideId.slice(0, 8)}` })
+    .setTimestamp()
+
+  logger.info({
+    createdBy: interaction.user.id,
+    botId: botUser.id,
+    botName,
+    overrideCost: cost,
+    originalCost: currentBaseCost,
+    duration: durationStr,
+    durationMs,
+    expiresAt,
+    overrideId,
+    replacedExisting,
+    serverId: server.id,
+  }, 'Admin created sale')
+
+  await interaction.reply({
+    embeds: [embed],
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
+async function executeSaleView(
+  interaction: ChatInputCommandInteraction,
+  db: Database
+): Promise<void> {
+  const serverId = interaction.guildId
+
+  if (!serverId) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} This command can only be used in a server.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  const server = getOrCreateServer(db, serverId, interaction.guild?.name)
+  const activeSales = getActiveSales(db, server.id)
+
+  if (activeSales.length === 0) {
+    await interaction.reply({
+      content: `${Emoji.COSTS} No active sales in this server.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  let description = ''
+  for (const sale of activeSales) {
+    const botName = getBotDescription(db, sale.bot_discord_id, serverId) || `<@${sale.bot_discord_id}>`
+    const remaining = formatTimeRemaining(sale.expires_at)
+    const scope = sale.server_id ? 'Server' : 'Global'
+    const discountPercent = Math.round((1 - sale.override_cost / sale.original_cost) * 100)
+
+    description += `**${botName}** — ~~${sale.original_cost}~~ → **${sale.override_cost}** ichor (${discountPercent}% off)\n`
+    description += `${scope} • ${remaining ? `${remaining} remaining` : 'Expiring...'} • \`${sale.id.slice(0, 8)}\`\n\n`
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.ICHOR_PURPLE)
+    .setTitle(`${Emoji.COSTS} Active Sales`)
+    .setDescription(description)
+    .setFooter({ text: 'Use /ichor sale-cancel with the sale ID to end a sale early' })
+    .setTimestamp()
+
+  await interaction.reply({
+    embeds: [embed],
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
+async function executeSaleCancel(
+  interaction: ChatInputCommandInteraction,
+  db: Database
+): Promise<void> {
+  const saleIdInput = interaction.options.getString('sale_id', true).trim()
+
+  // Support both full IDs and short prefixes
+  let cancelled = cancelCostOverride(db, saleIdInput)
+
+  // If not found by exact ID, try prefix match
+  if (!cancelled) {
+    const match = db.prepare(`
+      SELECT id FROM cost_overrides WHERE id LIKE ?
+    `).get(`${saleIdInput}%`) as { id: string } | undefined
+
+    if (match) {
+      cancelled = cancelCostOverride(db, match.id)
+    }
+  }
+
+  if (!cancelled) {
+    await interaction.reply({
+      content: `${Emoji.CROSS} No sale found with ID \`${saleIdInput}\`. Use \`/ichor sale-view\` to see active sales.`,
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  const serverId = interaction.guildId
+  const botName = serverId
+    ? (getBotDescription(db, cancelled.bot_discord_id, serverId) || `<@${cancelled.bot_discord_id}>`)
+    : `<@${cancelled.bot_discord_id}>`
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.WARNING_ORANGE)
+    .setTitle(`${Emoji.CHECK} Sale Cancelled`)
+    .setDescription(
+      `Sale for **${botName}** has been cancelled.\n` +
+      `Cost returns to **${cancelled.original_cost} ichor**.`
+    )
+    .setTimestamp()
+
+  logger.info({
+    cancelledBy: interaction.user.id,
+    saleId: cancelled.id,
+    botDiscordId: cancelled.bot_discord_id,
+    overrideCost: cancelled.override_cost,
+    originalCost: cancelled.original_cost,
+  }, 'Admin cancelled sale')
 
   await interaction.reply({
     embeds: [embed],

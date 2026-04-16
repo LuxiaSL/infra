@@ -155,3 +155,28 @@ export interface TrackedMessage {
   createdAt: Date
   expiresAt: Date
 }
+
+/**
+ * Cost override (temporary sale/discount)
+ */
+export interface CostOverrideRow {
+  id: string
+  bot_discord_id: string
+  server_id: string | null
+  override_cost: number
+  original_cost: number
+  created_by: string       // Discord user ID of the admin
+  created_at: string       // ISO timestamp
+  expires_at: string       // ISO timestamp
+}
+
+export interface CostOverride {
+  id: string
+  botDiscordId: string
+  serverId: string | null
+  overrideCost: number
+  originalCost: number
+  createdBy: string
+  createdAt: Date
+  expiresAt: Date
+}

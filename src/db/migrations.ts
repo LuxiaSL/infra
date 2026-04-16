@@ -240,6 +240,26 @@ const MIGRATIONS: Migration[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_bounty_stars_message ON bounty_stars(message_id)`)
     }
   },
+  {
+    id: '011_add_cost_overrides',
+    description: 'Add cost_overrides table for temporary sales/discounts on bot costs',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cost_overrides (
+          id TEXT PRIMARY KEY,
+          bot_discord_id TEXT NOT NULL,
+          server_id TEXT REFERENCES servers(id),
+          override_cost REAL NOT NULL,
+          original_cost REAL NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now')),
+          expires_at TEXT NOT NULL
+        )
+      `)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_cost_overrides_bot ON cost_overrides(bot_discord_id, expires_at)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_cost_overrides_server ON cost_overrides(server_id, expires_at)`)
+    }
+  },
 ]
 
 /**

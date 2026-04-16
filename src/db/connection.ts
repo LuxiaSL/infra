@@ -7,6 +7,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import { SCHEMA } from './schema.js'
 import { runMigrations } from './migrations.js'
+import { clearExpiredOverrides } from '../services/cost.js'
 import { logger } from '../utils/logger.js'
 import { DatabaseError } from '../utils/errors.js'
 
@@ -37,6 +38,9 @@ export function initDatabase(dbPath: string): Database.Database {
 
     // Run any pending migrations
     runMigrations(db)
+
+    // Clean up any expired cost overrides from previous sessions
+    clearExpiredOverrides(db)
 
     logger.info({ dbPath }, 'Database initialized')
 
