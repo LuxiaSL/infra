@@ -29,6 +29,7 @@ import {
   EmbedBuilder,
   type ChatInputCommandInteraction,
   type Client,
+  type GuildMember,
   type TextChannel,
   type ThreadChannel,
   type Message,
@@ -113,7 +114,21 @@ export async function executePause(
     return
   }
 
-  const botName = interaction.options.getString('bot', true).trim()
+  // The autocompleted value is the target bot's Discord user ID. If an admin
+  // skipped autocomplete and typed something else (a display name, etc.),
+  // resolve it against the guild's bot members — tolerant of whatever the
+  // admin might type.
+  const rawBot = interaction.options.getString('bot', true).trim()
+  const botMember = resolveBotMember(interaction, rawBot)
+  if (!botMember) {
+    await interaction.editReply({
+      content: `${Emoji.CROSS} Could not find a bot matching \`${rawBot}\` in this server. Pick one from autocomplete.`,
+    })
+    return
+  }
+  const botUserId = botMember.user.id
+  const botDisplay = botMember.displayName  // for human-facing output only
+
   const durationStr = interaction.options.getString('duration') ?? undefined
   const messages = interaction.options.getInteger('messages') ?? undefined
   const reason = interaction.options.getString('reason') ?? undefined
@@ -162,14 +177,16 @@ export async function executePause(
   if (reason) {
     pauseBody.reason = reason
   }
-  const content = compileConfigMessage('pause', pauseBody, [botName])
+  // Write the pin with a canonical `<@id>` mention so chapterx resolves the
+  // target by Discord user ID (unambiguous across config-name vs display-name).
+  const content = compileConfigMessage('pause', pauseBody, [`<@${botUserId}>`])
 
   // Step 1: send the new .pause message.
   let pauseMsg: Message
   try {
     pauseMsg = await channel.send(content)
   } catch (error) {
-    logger.error({ error, channelId: channel.id, botName }, 'Failed to send .pause message')
+    logger.error({ error, channelId: channel.id, botUserId, botDisplay }, 'Failed to send .pause message')
     await interaction.editReply({
       content: `${Emoji.CROSS} Failed to send .pause message: ${error instanceof Error ? error.message : 'Unknown error'}`,
     })
@@ -194,7 +211,7 @@ export async function executePause(
   const pauseResult = createPause(db, {
     serverInternalId: server.id,
     channelId: channel.id,
-    botName,
+    botName: botUserId,  // DB key: Discord user ID — unambiguous across rename/display-name changes
     messageId: pauseMsg.id,
     startedAt,
     expiresAt,
@@ -224,7 +241,8 @@ export async function executePause(
     userId: interaction.user.id,
     serverId,
     channelId: channel.id,
-    botName,
+    botUserId,
+    botDisplay,
     messageId: pauseMsg.id,
     durationMs,
     messages,
@@ -234,7 +252,7 @@ export async function executePause(
 
   await interaction.editReply({
     content:
-      `${Emoji.CHECK} Paused **${botName}** in this channel ` +
+      `${Emoji.CHECK} Paused **${botDisplay}** in this channel ` +
       `for ${gateSummary}` +
       (pauseResult.replacedExisting ? ` (replaced previous pause).` : `.`) +
       `\n→ ${pauseMsg.url}`,
@@ -244,11 +262,11 @@ export async function executePause(
   const expiresTimestamp = Math.floor(expiresAtDate.getTime() / 1000)
   const announcement = new EmbedBuilder()
     .setColor(Colors.WARNING_ORANGE)
-    .setTitle(`⏸ ${botName} paused`)
+    .setTitle(`⏸ ${botDisplay} paused`)
     .setDescription(
-      `**${botName}** will not respond in this channel for ${gateSummary}.` +
+      `**${botDisplay}** will not respond in this channel for ${gateSummary}.` +
       (reason ? `\n\n*${reason}*` : '') +
-      `\n\nUse \`/unpause bot:${botName}\` to end early.`
+      `\n\nUse \`/unpause bot:${botDisplay}\` to end early.`
     )
 
   if (durationMs !== null) {
@@ -319,14 +337,24 @@ export async function executeUnpause(
     return
   }
 
-  const botName = interaction.options.getString('bot', true).trim()
+  const rawBot = interaction.options.getString('bot', true).trim()
+  const botMember = resolveBotMember(interaction, rawBot)
+  if (!botMember) {
+    await interaction.editReply({
+      content: `${Emoji.CROSS} Could not find a bot matching \`${rawBot}\` in this server. Pick one from autocomplete.`,
+    })
+    return
+  }
+  const botUserId = botMember.user.id
+  const botDisplay = botMember.displayName
+
   const server = getOrCreateServer(db, serverId, interaction.guild?.name)
 
-  const removed = removePause(db, server.id, channel.id, botName)
+  const removed = removePause(db, server.id, channel.id, botUserId)
 
   if (!removed) {
     await interaction.editReply({
-      content: `${Emoji.CROSS} No active pause for **${botName}** in this channel.`,
+      content: `${Emoji.CROSS} No active pause for **${botDisplay}** in this channel.`,
     })
     return
   }
@@ -342,19 +370,20 @@ export async function executeUnpause(
     userId: interaction.user.id,
     serverId,
     channelId: channel.id,
-    botName,
+    botUserId,
+    botDisplay,
     messageId: removed.message_id,
   }, 'Pause cleared via /unpause')
 
   await interaction.editReply({
-    content: `${Emoji.CHECK} Pause cleared for **${botName}**.`,
+    content: `${Emoji.CHECK} Pause cleared for **${botDisplay}**.`,
   })
 
   // Public notice so users know the bot is back.
   const announcement = new EmbedBuilder()
     .setColor(Colors.SUCCESS_GREEN)
-    .setTitle(`▶ ${botName} unpaused`)
-    .setDescription(`**${botName}** will respond in this channel again.`)
+    .setTitle(`▶ ${botDisplay} unpaused`)
+    .setDescription(`**${botDisplay}** will respond in this channel again.`)
     .setTimestamp()
 
   try {
@@ -367,6 +396,43 @@ export async function executeUnpause(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Resolve the bot the admin wants to target. Normally the autocomplete value
+ * is already a Discord user ID, but admins can also type a display name,
+ * username, or `<@id>` mention directly. We handle all forms against the
+ * guild's bot members so a typo doesn't silently create a pause that no bot
+ * will honor.
+ */
+function resolveBotMember(
+  interaction: ChatInputCommandInteraction,
+  input: string,
+): GuildMember | null {
+  const guild = interaction.guild
+  if (!guild) return null
+
+  // Unwrap `<@id>` / `<@!id>` mentions.
+  const mentionMatch = input.match(/^<@!?(\d+)>$/)
+  const asId = mentionMatch ? mentionMatch[1]! : /^\d+$/.test(input) ? input : null
+
+  if (asId) {
+    const byId = guild.members.cache.get(asId)
+    if (byId && byId.user.bot) return byId
+  }
+
+  const q = input.toLowerCase()
+  for (const m of guild.members.cache.values()) {
+    if (!m.user.bot) continue
+    if (
+      m.displayName.toLowerCase() === q
+      || (m.user.globalName ?? '').toLowerCase() === q
+      || m.user.username.toLowerCase() === q
+    ) {
+      return m
+    }
+  }
+  return null
+}
 
 async function unpinMessageIfPresent(
   channel: TextChannel | ThreadChannel,
