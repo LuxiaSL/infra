@@ -66,6 +66,13 @@ export async function handleAutocomplete(
     return
   }
 
+  // Config key autocomplete for /config custom_key
+  if (focused.name === 'custom_key' && commandName === 'config') {
+    const choices = autocompleteConfigKeys(focused.value)
+    await interaction.respond(choices)
+    return
+  }
+
   // Default: return empty
   await interaction.respond([])
 }

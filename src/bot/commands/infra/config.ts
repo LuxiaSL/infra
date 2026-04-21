@@ -12,7 +12,7 @@ import {
   type ThreadChannel,
   MessageFlags,
 } from 'discord.js'
-import { compileConfigMessage } from '../../../infra/config-message.js'
+import { compileConfigMessage, parseConfigValue } from '../../../infra/config-message.js'
 import { markPinsDirty, getPinnedMessages } from '../../../infra/pin-cache.js'
 import { logger } from '../../../utils/logger.js'
 
@@ -95,6 +95,17 @@ export const configCommand = new SlashCommandBuilder()
       .setDescription('Ignore messages starting with .')
       .setRequired(false)
   )
+  .addStringOption(opt =>
+    opt.setName('custom_key')
+      .setDescription('Any config key (see autocomplete for full list)')
+      .setRequired(false)
+      .setAutocomplete(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('custom_value')
+      .setDescription('Value for custom_key (parsed as YAML: true/false, numbers, lists work)')
+      .setRequired(false)
+  )
 
 export async function executeConfig(
   interaction: ChatInputCommandInteraction,
@@ -121,6 +132,19 @@ export async function executeConfig(
       if (value !== undefined && value !== null) {
         configDict[key] = value
       }
+    }
+
+    // Merge custom key/value if provided
+    const customKey = interaction.options.getString('custom_key')
+    const customValue = interaction.options.getString('custom_value')
+
+    if (customKey && customValue !== null && customValue !== undefined) {
+      configDict[customKey] = parseConfigValue(customValue)
+    } else if (customKey && (customValue === null || customValue === undefined)) {
+      await interaction.editReply({
+        content: '❌ `custom_key` requires a `custom_value`.',
+      })
+      return
     }
 
     if (Object.keys(configDict).length === 0) {
