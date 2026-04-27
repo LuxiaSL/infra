@@ -300,7 +300,6 @@ export function createCostsEmbed(
     if (bot.description && bot.description !== bot.name) {
       description += `${bot.description}\n`
     }
-    description += '\n'
   }
 
   embed.setDescription(description)
