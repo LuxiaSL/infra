@@ -284,6 +284,17 @@ const MIGRATIONS: Migration[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_pauses_lookup ON bot_pauses(server_id, channel_id, bot_name)`)
     }
   },
+  {
+    id: '013_rename_bot_pauses_to_bot_sleeps',
+    description: 'Rename bot_pauses table to bot_sleeps (pause/unpause → sleep/wake)',
+    up: (db) => {
+      db.exec(`ALTER TABLE bot_pauses RENAME TO bot_sleeps`)
+      db.exec(`DROP INDEX IF EXISTS idx_bot_pauses_expires`)
+      db.exec(`DROP INDEX IF EXISTS idx_bot_pauses_lookup`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_sleeps_expires ON bot_sleeps(expires_at)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_sleeps_lookup ON bot_sleeps(server_id, channel_id, bot_name)`)
+    }
+  },
 ]
 
 /**

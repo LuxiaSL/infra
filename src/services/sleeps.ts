@@ -1,9 +1,9 @@
 /**
- * Pauses Service
+ * Sleeps Service
  *
- * Persists scheduled unpin state for pinned `.pause` messages.
+ * Persists scheduled unpin state for pinned `.sleep` messages.
  *
- * The pinned Discord message is the source of truth for pause semantics
+ * The pinned Discord message is the source of truth for sleep semantics
  * (started_at, duration_seconds, messages, reason, target bot). Each chapterx
  * bot reads the pin directly via its event-driven pin tracker and honors it
  * locally.
@@ -16,12 +16,12 @@ import type { Database } from 'better-sqlite3'
 import { generateId } from '../db/connection.js'
 import { logger } from '../utils/logger.js'
 
-export interface BotPauseRow {
+export interface BotSleepRow {
   id: string
   server_id: string                 // internal soma server id (NOT the Discord guild id)
   channel_id: string                // Discord channel id
   bot_name: string                  // chapterx botId (EMS directory name), lowercased
-  message_id: string                // pinned .pause message id
+  message_id: string                // pinned .sleep message id
   started_at: string                // ISO
   expires_at: string                // ISO; hard cap even when messages-only
   messages_initial: number | null   // NULL when time-only
@@ -30,7 +30,7 @@ export interface BotPauseRow {
   created_at: string
 }
 
-export interface CreatePauseParams {
+export interface CreateSleepParams {
   serverInternalId: string
   channelId: string
   botName: string
@@ -43,34 +43,31 @@ export interface CreatePauseParams {
 }
 
 /**
- * Upsert a pause for `(server, channel, botName)`. Replaces any existing row
+ * Upsert a sleep for `(server, channel, botName)`. Replaces any existing row
  * (matches the /config upsert convention).
  */
-export function createPause(
+export function createSleep(
   db: Database,
-  params: CreatePauseParams,
+  params: CreateSleepParams,
 ): { id: string; replacedExisting: boolean; replacedMessageId: string | null } {
   const id = generateId()
   const botName = params.botName.toLowerCase()
 
-  // Pull any existing row so the caller can unpin the old message. Doing this
-  // in a transaction with the insert means we always return a consistent
-  // "replacedMessageId" — the delete never races against a concurrent insert.
   const result = db.transaction(() => {
     const existing = db.prepare(`
-      SELECT message_id FROM bot_pauses
+      SELECT message_id FROM bot_sleeps
       WHERE server_id = ? AND channel_id = ? AND bot_name = ?
-    `).get(params.serverInternalId, params.channelId, botName) as Pick<BotPauseRow, 'message_id'> | undefined
+    `).get(params.serverInternalId, params.channelId, botName) as Pick<BotSleepRow, 'message_id'> | undefined
 
     if (existing) {
       db.prepare(`
-        DELETE FROM bot_pauses
+        DELETE FROM bot_sleeps
         WHERE server_id = ? AND channel_id = ? AND bot_name = ?
       `).run(params.serverInternalId, params.channelId, botName)
     }
 
     db.prepare(`
-      INSERT INTO bot_pauses (
+      INSERT INTO bot_sleeps (
         id, server_id, channel_id, bot_name, message_id,
         started_at, expires_at, messages_initial, created_by, reason
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -104,30 +101,30 @@ export function createPause(
     expiresAt: params.expiresAt,
     messagesInitial: params.messagesInitial,
     replacedExisting: result.replacedExisting,
-  }, 'Created bot pause')
+  }, 'Created bot sleep')
 
   return result
 }
 
 /**
- * Remove the pause for `(server, channel, botName)`. Returns the deleted row
+ * Remove the sleep for `(server, channel, botName)`. Returns the deleted row
  * (so caller can unpin the message) or null if none existed.
  */
-export function removePause(
+export function removeSleep(
   db: Database,
   serverInternalId: string,
   channelId: string,
   botName: string,
-): BotPauseRow | null {
+): BotSleepRow | null {
   const lowered = botName.toLowerCase()
   const row = db.prepare(`
-    SELECT * FROM bot_pauses
+    SELECT * FROM bot_sleeps
     WHERE server_id = ? AND channel_id = ? AND bot_name = ?
-  `).get(serverInternalId, channelId, lowered) as BotPauseRow | undefined
+  `).get(serverInternalId, channelId, lowered) as BotSleepRow | undefined
 
   if (!row) return null
 
-  db.prepare(`DELETE FROM bot_pauses WHERE id = ?`).run(row.id)
+  db.prepare(`DELETE FROM bot_sleeps WHERE id = ?`).run(row.id)
 
   logger.info({
     id: row.id,
@@ -135,39 +132,39 @@ export function removePause(
     channelId,
     botName: lowered,
     messageId: row.message_id,
-  }, 'Removed bot pause')
+  }, 'Removed bot sleep')
 
   return row
 }
 
 /** Delete by row id (used by the sweeper). */
-export function removePauseById(db: Database, id: string): void {
-  db.prepare(`DELETE FROM bot_pauses WHERE id = ?`).run(id)
+export function removeSleepById(db: Database, id: string): void {
+  db.prepare(`DELETE FROM bot_sleeps WHERE id = ?`).run(id)
 }
 
 /** Rows whose `expires_at <= now`. Used by the sweeper. */
-export function listExpiredPauses(db: Database, now: Date = new Date()): BotPauseRow[] {
+export function listExpiredSleeps(db: Database, now: Date = new Date()): BotSleepRow[] {
   return db.prepare(`
-    SELECT * FROM bot_pauses WHERE expires_at <= ?
+    SELECT * FROM bot_sleeps WHERE expires_at <= ?
     ORDER BY expires_at ASC
-  `).all(now.toISOString()) as BotPauseRow[]
+  `).all(now.toISOString()) as BotSleepRow[]
 }
 
-/** All active (not-yet-expired) pauses, optionally scoped to a server. */
-export function listActivePauses(
+/** All active (not-yet-expired) sleeps, optionally scoped to a server. */
+export function listActiveSleeps(
   db: Database,
   serverInternalId?: string,
-): BotPauseRow[] {
+): BotSleepRow[] {
   const now = new Date().toISOString()
   if (serverInternalId) {
     return db.prepare(`
-      SELECT * FROM bot_pauses
+      SELECT * FROM bot_sleeps
       WHERE server_id = ? AND expires_at > ?
       ORDER BY expires_at ASC
-    `).all(serverInternalId, now) as BotPauseRow[]
+    `).all(serverInternalId, now) as BotSleepRow[]
   }
   return db.prepare(`
-    SELECT * FROM bot_pauses WHERE expires_at > ?
+    SELECT * FROM bot_sleeps WHERE expires_at > ?
     ORDER BY expires_at ASC
-  `).all(now) as BotPauseRow[]
+  `).all(now) as BotSleepRow[]
 }

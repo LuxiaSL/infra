@@ -21,8 +21,8 @@ export { historySpliceCommand, executeHistorySplice } from './history-splice.js'
 export { transcriptCommand, executeTranscript } from './transcript.js'
 export { getPromptCommand, executeGetPrompt } from './get-prompt.js'
 
-// Pause commands
-export { pauseCommand, executePause, unpauseCommand, executeUnpause } from './pause.js'
+// Sleep commands
+export { sleepCommand, executeSleep, wakeCommand, executeWake } from './sleep.js'
 
 // Loom commands
 export { forkCommand, executeFork } from './loom.js'

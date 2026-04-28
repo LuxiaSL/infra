@@ -41,8 +41,8 @@ import {
   forkCommand, executeFork,
   muCommand, executeMu,
   stashCommand, executeStash,
-  pauseCommand, executePause,
-  unpauseCommand, executeUnpause,
+  sleepCommand, executeSleep,
+  wakeCommand, executeWake,
   handleLoomButton,
   forkContextMenu,
   forkPrivateContextMenu,
@@ -76,8 +76,8 @@ const commands = [
   forkCommand,
   muCommand,
   stashCommand,
-  pauseCommand,
-  unpauseCommand,
+  sleepCommand,
+  wakeCommand,
 ]
 
 /** Context menu commands */
@@ -321,11 +321,11 @@ async function handleCommand(
     case 'get_prompt':
       await executeGetPrompt(interaction, client)
       break
-    case 'pause':
-      await executePause(interaction, db, client)
+    case 'sleep':
+      await executeSleep(interaction, db, client)
       break
-    case 'unpause':
-      await executeUnpause(interaction, db, client)
+    case 'wake':
+      await executeWake(interaction, db, client)
       break
 
     default:

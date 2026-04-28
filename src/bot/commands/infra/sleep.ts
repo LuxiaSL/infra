@@ -1,25 +1,25 @@
 /**
- * /pause and /unpause — admin-gated infra commands for temporarily muting
+ * /sleep and /wake — admin-gated infra commands for temporarily muting
  * chapterx bots in a channel.
  *
  * Mechanics:
- *   - /pause pins a `.pause <botName>` message with `started_at`, optional
+ *   - /sleep pins a `.sleep <botName>` message with `started_at`, optional
  *     `duration_seconds`, optional `messages`, and optional `reason`. ChapterX
  *     bots honor this locally via their event-driven pin tracker — soma does
  *     not need to talk to chapterx directly.
- *   - A row is also written to `bot_pauses` so soma can schedule the unpin
+ *   - A row is also written to `bot_sleeps` so soma can schedule the unpin
  *     when the duration expires (survives soma restarts via the sweeper).
- *   - /unpause deletes the row and unpins the message immediately.
+ *   - /wake deletes the row and unpins the message immediately.
  *
- * Only one active pause per (channel, bot). Re-running /pause replaces the
- * existing pause (upsert) — the old pinned message is unpinned as part of the
+ * Only one active sleep per (channel, bot). Re-running /sleep replaces the
+ * existing sleep (upsert) — the old pinned message is unpinned as part of the
  * transition.
  *
  * At least one of `duration` / `messages` must be provided. `duration` is
  * always recorded as an `expires_at` (even when messages-only, defaulting to
  * 24h) so the sweeper always cleans up the pin.
  *
- * Hard cap: 24h on any single pause. Admins can re-run /pause to extend.
+ * Hard cap: 24h on any single sleep. Admins can re-run /sleep to extend.
  */
 
 import {
@@ -39,29 +39,28 @@ import { compileConfigMessage } from '../../../infra/config-message.js'
 import { markPinsDirty } from '../../../infra/pin-cache.js'
 import { hasAdminRole } from '../admin.js'
 import { getOrCreateServer } from '../../../services/user.js'
-import { createPause, removePause } from '../../../services/pauses.js'
+import { createSleep, removeSleep } from '../../../services/sleeps.js'
 import { parseDuration, formatDuration } from '../../../utils/time.js'
 import { Emoji, Colors } from '../../embeds/builders.js'
 import { logger } from '../../../utils/logger.js'
 
-// 24h cap on any single pause.
-const MAX_PAUSE_MS = 24 * 60 * 60 * 1000
+const MAX_SLEEP_MS = 24 * 60 * 60 * 1000
 
-// Fallback expires_at window for messages-only pauses — hygiene for the
-// sweeper only; chapterx ends the pause at the message count.
+// Fallback expires_at window for messages-only sleeps — hygiene for the
+// sweeper only; chapterx ends the sleep at the message count.
 const MESSAGES_ONLY_EXPIRY_MS = 24 * 60 * 60 * 1000
 
 // ============================================================================
-// /pause
+// /sleep
 // ============================================================================
 
-export const pauseCommand = new SlashCommandBuilder()
-  .setName('pause')
+export const sleepCommand = new SlashCommandBuilder()
+  .setName('sleep')
   .setDescription('Temporarily mute a chapterx bot in this channel')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption(opt =>
     opt.setName('bot')
-      .setDescription('Bot to pause (autocomplete from EMS directory)')
+      .setDescription('Bot to put to sleep (autocomplete from guild members)')
       .setRequired(true)
       .setAutocomplete(true)
   )
@@ -72,7 +71,7 @@ export const pauseCommand = new SlashCommandBuilder()
   )
   .addIntegerOption(opt =>
     opt.setName('messages')
-      .setDescription('Number of non-dot messages (from any author) before unpause')
+      .setDescription('Number of non-dot messages (from any author) before wake')
       .setMinValue(1)
       .setMaxValue(10_000)
       .setRequired(false)
@@ -84,17 +83,16 @@ export const pauseCommand = new SlashCommandBuilder()
       .setRequired(false)
   )
 
-export async function executePause(
+export async function executeSleep(
   interaction: ChatInputCommandInteraction,
   db: Database,
   _client: Client,
 ): Promise<void> {
-  // Runtime admin check on top of the default-member-permissions hide
   if (!hasAdminRole(interaction, db)) {
     logger.warn({
       userId: interaction.user.id,
       command: interaction.commandName,
-    }, 'Unauthorized /pause attempt')
+    }, 'Unauthorized /sleep attempt')
     await interaction.reply({
       content: `${Emoji.CROSS} You don't have permission to use this command.`,
       flags: MessageFlags.Ephemeral,
@@ -114,10 +112,6 @@ export async function executePause(
     return
   }
 
-  // The autocompleted value is the target bot's Discord user ID. If an admin
-  // skipped autocomplete and typed something else (a display name, etc.),
-  // resolve it against the guild's bot members — tolerant of whatever the
-  // admin might type.
   const rawBot = interaction.options.getString('bot', true).trim()
   const botMember = resolveBotMember(interaction, rawBot)
   if (!botMember) {
@@ -127,7 +121,7 @@ export async function executePause(
     return
   }
   const botUserId = botMember.user.id
-  const botDisplay = botMember.displayName  // for human-facing output only
+  const botDisplay = botMember.displayName
 
   const durationStr = interaction.options.getString('duration') ?? undefined
   const messages = interaction.options.getInteger('messages') ?? undefined
@@ -140,7 +134,6 @@ export async function executePause(
     return
   }
 
-  // Parse + validate duration.
   let durationMs: number | null = null
   if (durationStr) {
     durationMs = parseDuration(durationStr)
@@ -150,9 +143,9 @@ export async function executePause(
       })
       return
     }
-    if (durationMs > MAX_PAUSE_MS) {
+    if (durationMs > MAX_SLEEP_MS) {
       await interaction.editReply({
-        content: `${Emoji.CROSS} Duration cannot exceed 24h. Re-run /pause to extend.`,
+        content: `${Emoji.CROSS} Duration cannot exceed 24h. Re-run /sleep to extend.`,
       })
       return
     }
@@ -164,55 +157,48 @@ export async function executePause(
   const expiresAtDate = new Date(now.getTime() + effectiveMs)
   const expiresAt = expiresAtDate.toISOString()
 
-  // Build the .pause pinned message. The target line becomes `.pause <botName>`.
-  const pauseBody: Record<string, unknown> = {
+  const sleepBody: Record<string, unknown> = {
     started_at: startedAt,
   }
   if (durationMs !== null) {
-    pauseBody.duration_seconds = Math.round(durationMs / 1000)
+    sleepBody.duration_seconds = Math.round(durationMs / 1000)
   }
   if (messages !== undefined) {
-    pauseBody.messages = messages
+    sleepBody.messages = messages
   }
   if (reason) {
-    pauseBody.reason = reason
+    sleepBody.reason = reason
   }
-  // Write the pin with a canonical `<@id>` mention so chapterx resolves the
-  // target by Discord user ID (unambiguous across config-name vs display-name).
-  const content = compileConfigMessage('pause', pauseBody, [`<@${botUserId}>`])
+  const content = compileConfigMessage('sleep', sleepBody, [`<@${botUserId}>`])
 
-  // Step 1: send the new .pause message.
-  let pauseMsg: Message
+  let sleepMsg: Message
   try {
-    pauseMsg = await channel.send(content)
+    sleepMsg = await channel.send(content)
   } catch (error) {
-    logger.error({ error, channelId: channel.id, botUserId, botDisplay }, 'Failed to send .pause message')
+    logger.error({ error, channelId: channel.id, botUserId, botDisplay }, 'Failed to send .sleep message')
     await interaction.editReply({
-      content: `${Emoji.CROSS} Failed to send .pause message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      content: `${Emoji.CROSS} Failed to send .sleep message: ${error instanceof Error ? error.message : 'Unknown error'}`,
     })
     return
   }
 
-  // Step 2: pin the new message. On failure, delete the stray send and abort.
   try {
-    await pauseMsg.pin()
+    await sleepMsg.pin()
   } catch (error) {
-    logger.error({ error, channelId: channel.id, messageId: pauseMsg.id }, 'Failed to pin .pause message')
-    pauseMsg.delete().catch(() => {})  // best effort cleanup
+    logger.error({ error, channelId: channel.id, messageId: sleepMsg.id }, 'Failed to pin .sleep message')
+    sleepMsg.delete().catch(() => {})
     await interaction.editReply({
-      content: `${Emoji.CROSS} Failed to pin .pause message: ${error instanceof Error ? error.message : 'Unknown error'}. Check bot permissions.`,
+      content: `${Emoji.CROSS} Failed to pin .sleep message: ${error instanceof Error ? error.message : 'Unknown error'}. Check bot permissions.`,
     })
     return
   }
 
-  // Step 3: upsert DB row. This returns the previous pinned message id (if
-  // we're replacing an existing pause) so we can unpin it.
   const server = getOrCreateServer(db, serverId, interaction.guild?.name)
-  const pauseResult = createPause(db, {
+  const sleepResult = createSleep(db, {
     serverInternalId: server.id,
     channelId: channel.id,
-    botName: botUserId,  // DB key: Discord user ID — unambiguous across rename/display-name changes
-    messageId: pauseMsg.id,
+    botName: botUserId,
+    messageId: sleepMsg.id,
     startedAt,
     expiresAt,
     ...(messages !== undefined ? { messagesInitial: messages } : {}),
@@ -220,53 +206,49 @@ export async function executePause(
     ...(reason ? { reason } : {}),
   })
 
-  // Step 4: best-effort unpin of the replaced message.
-  if (pauseResult.replacedMessageId) {
-    unpinMessageIfPresent(channel, pauseResult.replacedMessageId).catch(err =>
-      logger.warn({ err, messageId: pauseResult.replacedMessageId }, 'Failed to unpin replaced .pause'),
+  if (sleepResult.replacedMessageId) {
+    unpinMessageIfPresent(channel, sleepResult.replacedMessageId).catch(err =>
+      logger.warn({ err, messageId: sleepResult.replacedMessageId }, 'Failed to unpin replaced .sleep'),
     )
   }
 
-  // Step 5: mark soma's own pin cache dirty.
   markPinsDirty(channel.id)
 
-  // Compose the admin-facing ephemeral reply.
   const gateSummary = [
     durationMs !== null ? formatDuration(durationMs) : null,
     messages !== undefined ? `${messages} message${messages === 1 ? '' : 's'}` : null,
   ].filter(Boolean).join(' or ')
 
   logger.info({
-    pauseId: pauseResult.id,
+    sleepId: sleepResult.id,
     userId: interaction.user.id,
     serverId,
     channelId: channel.id,
     botUserId,
     botDisplay,
-    messageId: pauseMsg.id,
+    messageId: sleepMsg.id,
     durationMs,
     messages,
     reason,
-    replacedExisting: pauseResult.replacedExisting,
-  }, 'Pause created via /pause')
+    replacedExisting: sleepResult.replacedExisting,
+  }, 'Sleep created via /sleep')
 
   await interaction.editReply({
     content:
-      `${Emoji.CHECK} Paused **${botDisplay}** in this channel ` +
+      `${Emoji.CHECK} Put **${botDisplay}** to sleep in this channel ` +
       `for ${gateSummary}` +
-      (pauseResult.replacedExisting ? ` (replaced previous pause).` : `.`) +
-      `\n→ ${pauseMsg.url}`,
+      (sleepResult.replacedExisting ? ` (replaced previous sleep).` : `.`) +
+      `\n→ ${sleepMsg.url}`,
   })
 
-  // Public channel announcement, mirroring /ichor sale style.
   const expiresTimestamp = Math.floor(expiresAtDate.getTime() / 1000)
   const announcement = new EmbedBuilder()
     .setColor(Colors.WARNING_ORANGE)
-    .setTitle(`⏸ ${botDisplay} paused`)
+    .setTitle(`💤 ${botDisplay} sleeping`)
     .setDescription(
       `**${botDisplay}** will not respond in this channel for ${gateSummary}.` +
       (reason ? `\n\n*${reason}*` : '') +
-      `\n\nUse \`/unpause bot:${botDisplay}\` to end early.`
+      `\n\nUse \`/wake bot:${botDisplay}\` to end early.`
     )
 
   if (durationMs !== null) {
@@ -289,26 +271,26 @@ export async function executePause(
   try {
     await channel.send({ embeds: [announcement] })
   } catch (err) {
-    logger.warn({ err, channelId: channel.id }, 'Failed to send pause announcement')
+    logger.warn({ err, channelId: channel.id }, 'Failed to send sleep announcement')
   }
 }
 
 // ============================================================================
-// /unpause
+// /wake
 // ============================================================================
 
-export const unpauseCommand = new SlashCommandBuilder()
-  .setName('unpause')
-  .setDescription('End an active pause for a bot in this channel')
+export const wakeCommand = new SlashCommandBuilder()
+  .setName('wake')
+  .setDescription('Wake a sleeping bot in this channel')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption(opt =>
     opt.setName('bot')
-      .setDescription('Bot to unpause')
+      .setDescription('Bot to wake')
       .setRequired(true)
       .setAutocomplete(true)
   )
 
-export async function executeUnpause(
+export async function executeWake(
   interaction: ChatInputCommandInteraction,
   db: Database,
   _client: Client,
@@ -317,7 +299,7 @@ export async function executeUnpause(
     logger.warn({
       userId: interaction.user.id,
       command: interaction.commandName,
-    }, 'Unauthorized /unpause attempt')
+    }, 'Unauthorized /wake attempt')
     await interaction.reply({
       content: `${Emoji.CROSS} You don't have permission to use this command.`,
       flags: MessageFlags.Ephemeral,
@@ -350,46 +332,44 @@ export async function executeUnpause(
 
   const server = getOrCreateServer(db, serverId, interaction.guild?.name)
 
-  const removed = removePause(db, server.id, channel.id, botUserId)
+  const removed = removeSleep(db, server.id, channel.id, botUserId)
 
   if (!removed) {
     await interaction.editReply({
-      content: `${Emoji.CROSS} No active pause for **${botDisplay}** in this channel.`,
+      content: `${Emoji.CROSS} No active sleep for **${botDisplay}** in this channel.`,
     })
     return
   }
 
-  // Best-effort unpin of the .pause message.
   await unpinMessageIfPresent(channel, removed.message_id).catch(err =>
-    logger.warn({ err, messageId: removed.message_id }, 'Failed to unpin .pause on /unpause'),
+    logger.warn({ err, messageId: removed.message_id }, 'Failed to unpin .sleep on /wake'),
   )
   markPinsDirty(channel.id)
 
   logger.info({
-    pauseId: removed.id,
+    sleepId: removed.id,
     userId: interaction.user.id,
     serverId,
     channelId: channel.id,
     botUserId,
     botDisplay,
     messageId: removed.message_id,
-  }, 'Pause cleared via /unpause')
+  }, 'Sleep cleared via /wake')
 
   await interaction.editReply({
-    content: `${Emoji.CHECK} Pause cleared for **${botDisplay}**.`,
+    content: `${Emoji.CHECK} Woke **${botDisplay}** up.`,
   })
 
-  // Public notice so users know the bot is back.
   const announcement = new EmbedBuilder()
     .setColor(Colors.SUCCESS_GREEN)
-    .setTitle(`▶ ${botDisplay} unpaused`)
+    .setTitle(`☀️ ${botDisplay} awake`)
     .setDescription(`**${botDisplay}** will respond in this channel again.`)
     .setTimestamp()
 
   try {
     await channel.send({ embeds: [announcement] })
   } catch (err) {
-    logger.warn({ err, channelId: channel.id }, 'Failed to send unpause announcement')
+    logger.warn({ err, channelId: channel.id }, 'Failed to send wake announcement')
   }
 }
 
@@ -397,13 +377,6 @@ export async function executeUnpause(
 // Helpers
 // ============================================================================
 
-/**
- * Resolve the bot the admin wants to target. Normally the autocomplete value
- * is already a Discord user ID, but admins can also type a display name,
- * username, or `<@id>` mention directly. We handle all forms against the
- * guild's bot members so a typo doesn't silently create a pause that no bot
- * will honor.
- */
 function resolveBotMember(
   interaction: ChatInputCommandInteraction,
   input: string,
@@ -411,7 +384,6 @@ function resolveBotMember(
   const guild = interaction.guild
   if (!guild) return null
 
-  // Unwrap `<@id>` / `<@!id>` mentions.
   const mentionMatch = input.match(/^<@!?(\d+)>$/)
   const asId = mentionMatch ? mentionMatch[1]! : /^\d+$/.test(input) ? input : null
 
@@ -444,7 +416,6 @@ async function unpinMessageIfPresent(
       await msg.unpin()
     }
   } catch (error) {
-    // Message may already be gone (deleted) or unpinned — don't treat as fatal.
     const err = error as { code?: number; message?: string }
     if (err?.code === 10008) return  // Unknown Message
     if (err?.code === 10019) return  // Unknown Webhook (defensive)

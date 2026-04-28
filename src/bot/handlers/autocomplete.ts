@@ -45,7 +45,7 @@ export async function handleAutocomplete(
     return
   }
 
-  // Bot autocomplete for /pause, /unpause — iterate this guild's bot members.
+  // Bot autocomplete for /sleep, /wake — iterate this guild's bot members.
   // Guild membership is the canonical source because (a) it works for any bot,
   // not just ones registered in EMS or `bot_costs`, and (b) it gives us the
   // Discord user ID to emit as an unambiguous `<@id>` mention in the pin —
@@ -53,7 +53,7 @@ export async function handleAutocomplete(
   // name / user ID, so the mention is always resolvable.
   if (
     focused.name === 'bot' &&
-    (commandName === 'pause' || commandName === 'unpause')
+    (commandName === 'sleep' || commandName === 'wake')
   ) {
     await handleBotGuildMemberAutocomplete(interaction, focused.value)
     return
@@ -81,7 +81,7 @@ export async function handleAutocomplete(
  * Autocomplete bot users in the current guild. Filters guild members to only
  * those whose Discord user is a bot. The displayed choice name is the global
  * display name (what humans see in Discord); the submitted value is the bot's
- * Discord user ID, which /pause will format as a `<@id>` mention in the pin.
+ * Discord user ID, which /sleep will format as a `<@id>` mention in the pin.
  */
 async function handleBotGuildMemberAutocomplete(
   interaction: AutocompleteInteraction,
