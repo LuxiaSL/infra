@@ -288,7 +288,13 @@ const MIGRATIONS: Migration[] = [
     id: '013_rename_bot_pauses_to_bot_sleeps',
     description: 'Rename bot_pauses table to bot_sleeps (pause/unpause → sleep/wake)',
     up: (db) => {
-      db.exec(`ALTER TABLE bot_pauses RENAME TO bot_sleeps`)
+      // Schema.ts may have already created an empty bot_sleeps table before
+      // this migration runs — drop it so the rename can proceed.
+      const hasPauses = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='bot_pauses'`).get()
+      if (hasPauses) {
+        db.exec(`DROP TABLE IF EXISTS bot_sleeps`)
+        db.exec(`ALTER TABLE bot_pauses RENAME TO bot_sleeps`)
+      }
       db.exec(`DROP INDEX IF EXISTS idx_bot_pauses_expires`)
       db.exec(`DROP INDEX IF EXISTS idx_bot_pauses_lookup`)
       db.exec(`CREATE INDEX IF NOT EXISTS idx_bot_sleeps_expires ON bot_sleeps(expires_at)`)
