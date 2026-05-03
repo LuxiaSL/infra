@@ -236,13 +236,13 @@ export const ichorAdminCommand = new SlashCommandBuilder()
           .setRequired(true)
           .setMinValue(0)
           .setMaxValue(100000))
-      .addRoleOption(opt =>
-        opt.setName('role')
-          .setDescription('Only reset users with this role (omit to reset ALL users)'))
       .addBooleanOption(opt =>
         opt.setName('confirm')
           .setDescription('You must set this to true to confirm this action')
-          .setRequired(true)))
+          .setRequired(true))
+      .addRoleOption(opt =>
+        opt.setName('role')
+          .setDescription('Only reset users with this role (omit to reset ALL users)')))
   // Sale (temporary cost override) subcommands
   .addSubcommand(sub =>
     sub
