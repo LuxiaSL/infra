@@ -229,13 +229,16 @@ export const ichorAdminCommand = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub
       .setName('global-reset-balances')
-      .setDescription('Reset ALL user balances to a specific value (economy reset)')
+      .setDescription('Reset user balances to a specific value (economy reset)')
       .addNumberOption(opt =>
         opt.setName('amount')
           .setDescription('New balance for all users')
           .setRequired(true)
           .setMinValue(0)
           .setMaxValue(100000))
+      .addRoleOption(opt =>
+        opt.setName('role')
+          .setDescription('Only reset users with this role (omit to reset ALL users)'))
       .addBooleanOption(opt =>
         opt.setName('confirm')
           .setDescription('You must set this to true to confirm this action')
@@ -1831,36 +1834,87 @@ async function executeGlobalResetBalances(
 ): Promise<void> {
   const amount = interaction.options.getNumber('amount', true)
   const confirmed = interaction.options.getBoolean('confirm', true)
+  const role = interaction.options.getRole('role')
 
   if (!confirmed) {
+    const scope = role ? `balances for role **${role.name}**` : 'all balances'
     await interaction.reply({
-      content: `${Emoji.CROSS} You must set \`confirm\` to **True** to reset all balances. This action cannot be undone.`,
+      content: `${Emoji.CROSS} You must set \`confirm\` to **True** to reset ${scope}. This action cannot be undone.`,
       flags: MessageFlags.Ephemeral,
     })
     return
   }
 
-  // Get stats before reset
-  const beforeStats = db.prepare(`
-    SELECT 
-      COUNT(*) as userCount,
-      SUM(amount) as totalIchor,
-      AVG(amount) as avgBalance
-    FROM balances
-  `).get() as { userCount: number; totalIchor: number | null; avgBalance: number | null }
+  let usersAffected: number
+  let beforeStats: { userCount: number; totalIchor: number | null; avgBalance: number | null }
 
-  // Reset all balances and regen timestamps
-  const result = db.prepare(`
-    UPDATE balances 
-    SET amount = ?, last_regen_at = datetime('now')
-  `).run(amount)
+  if (role) {
+    const guild = interaction.guild
+    if (!guild) {
+      await interaction.reply({
+        content: `${Emoji.CROSS} This command must be used in a server.`,
+        flags: MessageFlags.Ephemeral,
+      })
+      return
+    }
 
-  const usersAffected = result.changes
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral })
 
+    const members = await guild.members.fetch()
+    const roleMembers = members.filter(m => m.roles.cache.has(role.id))
+    const memberIds = roleMembers.map(m => m.id)
+
+    if (memberIds.length === 0) {
+      await interaction.editReply({
+        content: `${Emoji.CROSS} No members found with role **${role.name}**.`,
+      })
+      return
+    }
+
+    const placeholders = memberIds.map(() => '?').join(',')
+
+    beforeStats = db.prepare(`
+      SELECT
+        COUNT(*) as userCount,
+        SUM(amount) as totalIchor,
+        AVG(amount) as avgBalance
+      FROM balances
+      WHERE user_id IN (
+        SELECT id FROM users WHERE discord_id IN (${placeholders})
+      )
+    `).get(...memberIds) as typeof beforeStats
+
+    const result = db.prepare(`
+      UPDATE balances
+      SET amount = ?, last_regen_at = datetime('now')
+      WHERE user_id IN (
+        SELECT id FROM users WHERE discord_id IN (${placeholders})
+      )
+    `).run(amount, ...memberIds)
+
+    usersAffected = result.changes
+  } else {
+    beforeStats = db.prepare(`
+      SELECT
+        COUNT(*) as userCount,
+        SUM(amount) as totalIchor,
+        AVG(amount) as avgBalance
+      FROM balances
+    `).get() as typeof beforeStats
+
+    const result = db.prepare(`
+      UPDATE balances
+      SET amount = ?, last_regen_at = datetime('now')
+    `).run(amount)
+
+    usersAffected = result.changes
+  }
+
+  const scope = role ? `**${role.name}** role members` : 'All users'
   const embed = new EmbedBuilder()
     .setColor(Colors.WARNING_ORANGE)
     .setTitle(`${Emoji.REVOKE} Economy Reset Complete`)
-    .setDescription(`All user balances have been set to **${amount} ichor**.`)
+    .setDescription(`${scope} have been set to **${amount} ichor**.`)
     .addFields(
       {
         name: 'Users Affected',
@@ -1889,7 +1943,7 @@ async function executeGlobalResetBalances(
       },
       {
         name: '⏱️ Regeneration',
-        value: 'All regen timers have been reset to now.',
+        value: `${role ? 'Affected users\'' : 'All'} regen timers have been reset to now.`,
         inline: true,
       }
     )
@@ -1902,12 +1956,17 @@ async function executeGlobalResetBalances(
     usersAffected,
     previousTotalIchor: beforeStats.totalIchor,
     previousAvgBalance: beforeStats.avgBalance,
-  }, 'ECONOMY RESET: All balances reset')
+    ...(role && { roleId: role.id, roleName: role.name }),
+  }, `ECONOMY RESET: ${role ? `Role ${role.name} balances` : 'All balances'} reset`)
 
-  await interaction.reply({
-    embeds: [embed],
-    flags: MessageFlags.Ephemeral,
-  })
+  if (role) {
+    await interaction.editReply({ embeds: [embed] })
+  } else {
+    await interaction.reply({
+      embeds: [embed],
+      flags: MessageFlags.Ephemeral,
+    })
+  }
 }
 
 // ─── Sale (Temporary Cost Override) Commands ─────────────────────────────────
